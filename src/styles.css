@@ -477,7 +477,7 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   text-align: left;
   transition: background .15s, box-shadow .15s;
 }
-.calendar-day:disabled { color: var(--ink); }
+.calendar-day[aria-disabled="true"] { color: var(--ink); cursor: default; }
 .calendar-day.is-outside { background: #f0eee8; color: #a9ada9; }
 .calendar-day.has-records { cursor: pointer; }
 .calendar-day.has-records:hover { background: #f2f6f1; box-shadow: inset 0 0 0 1px #b7c6bc; }

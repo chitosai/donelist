@@ -111,6 +111,7 @@ function CalendarDay({
 }: CalendarDayProps) {
   const isOutside = date.getMonth() !== currentMonth;
   const isToday = sameDay(date, new Date());
+  const isInactive = isOutside || records.length === 0;
   const sortedRecords = useMemo(
     () => [...records].sort((left, right) => left.happenedAt.localeCompare(right.happenedAt)),
     [records],
@@ -140,8 +141,11 @@ function CalendarDay({
       role="gridcell"
       aria-label={label}
       aria-selected={selected}
-      disabled={isOutside || records.length === 0}
-      onClick={(event) => onSelect(date, sortedRecords, event.currentTarget)}
+      aria-disabled={isInactive}
+      tabIndex={isInactive ? -1 : 0}
+      onClick={(event) => {
+        if (!isInactive) onSelect(date, sortedRecords, event.currentTarget);
+      }}
     >
       <span className="calendar-day-header">
         <span className="calendar-day-number">{date.getDate()}</span>
@@ -332,17 +336,18 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
   function selectDay(date: Date, dayRecords: DoneRecord[], element: HTMLElement) {
     if (!dayRecords.length) return;
     const rect = element.getBoundingClientRect();
-    setSelectedDay({
-      key: localDateKey(date),
+    const key = localDateKey(date);
+    setSelectedDay((current) => current?.key === key ? null : {
+      key,
       date,
       records: dayRecords,
       anchor: { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left },
     });
   }
 
-  function handleSheetBodyMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
+  function handleReviewSurfaceMouseDown(event: ReactMouseEvent<HTMLElement>) {
     const target = event.target as HTMLElement;
-    if (!target.closest(".calendar-day") && !target.closest(".day-detail-popover")) {
+    if (!target.closest(".calendar-day.has-records")) {
       setSelectedDay(null);
     }
   }
@@ -368,6 +373,7 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
         aria-modal="true"
         aria-labelledby="review-sheet-title"
         onMouseDown={(event) => event.stopPropagation()}
+        onMouseDownCapture={handleReviewSurfaceMouseDown}
       >
         <header className="review-sheet-header">
           <div className="review-title-group">
@@ -402,7 +408,7 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
           </div>
         </header>
 
-        <div className="review-sheet-body" onMouseDown={handleSheetBodyMouseDown}>
+        <div className="review-sheet-body">
           <div className="calendar-weekdays" aria-hidden="true">
             {WEEKDAYS.map((weekday, index) => (
               <span key={weekday} className={index >= 5 ? "is-weekend" : ""}>{weekday}</span>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type Keyboard
 import { IndexedDbRecordRepository } from "./data/IndexedDbRecordRepository";
 import type { DoneRecord, RecordBackup } from "./domain/DoneRecord";
 import { formatRecordTime, fromDateTimeLocalValue, toDateTimeLocalValue } from "./utils/time";
+import { ReviewSheet } from "./components/ReviewSheet";
 
 const repository = new IndexedDbRecordRepository();
 const RECENT_LIMIT = 10;
@@ -336,22 +337,11 @@ export function App() {
         </div>
       )}
 
-      {isReviewOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setIsReviewOpen(false)}>
-          <section
-            className="modal-card review-placeholder"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="review-title"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <span className="placeholder-mark" aria-hidden="true">◫</span>
-            <h2 id="review-title">回顾，下一步见</h2>
-            <p>月历与月度整理会在记录体验稳定后加入。现在先认真记住每件已经发生的事。</p>
-            <button className="button-primary" type="button" onClick={() => setIsReviewOpen(false)}>知道了</button>
-          </section>
-        </div>
-      )}
+      <ReviewSheet
+        open={isReviewOpen}
+        repository={repository}
+        onClose={() => setIsReviewOpen(false)}
+      />
     </main>
   );
 }

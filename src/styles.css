@@ -280,17 +280,285 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   color: var(--ink);
 }
 .modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 3px; }
-.modal-actions button, .review-placeholder button { border-radius: 10px; padding: 10px 15px; cursor: pointer; font-weight: 600; }
+.modal-actions button { border-radius: 10px; padding: 10px 15px; cursor: pointer; font-weight: 600; }
 .button-secondary { border: 1px solid var(--line); background: transparent; }
 .button-primary { border: 1px solid var(--green); background: var(--green); color: white; }
 .button-primary:disabled { opacity: .4; cursor: default; }
 .button-danger { border: 1px solid #a43f32; background: #a43f32; color: white; }
 .delete-confirm p { margin: -5px 0 24px; color: var(--muted); font-size: 14px; line-height: 1.7; }
 
-.review-placeholder { text-align: center; }
-.review-placeholder .placeholder-mark { display: block; margin: 3px 0 16px; color: var(--orange); font-size: 42px; }
-.review-placeholder h2 { margin-bottom: 10px; }
-.review-placeholder p { margin: 0 auto 22px; max-width: 360px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+.review-backdrop {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 12px;
+  background: rgba(17, 31, 27, .2);
+  -webkit-backdrop-filter: blur(11px) saturate(.85);
+  backdrop-filter: blur(11px) saturate(.85);
+  animation: review-backdrop-in .24s ease-out;
+}
+
+.review-sheet {
+  display: flex;
+  width: min(1480px, 100%);
+  height: 90dvh;
+  min-height: 340px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.68);
+  border-bottom: 0;
+  border-radius: 28px 28px 0 0;
+  background: rgba(249, 247, 240, .97);
+  box-shadow: 0 -24px 90px rgba(20, 37, 31, .2);
+  animation: review-sheet-in .38s cubic-bezier(.2, .82, .2, 1);
+}
+
+@keyframes review-backdrop-in { from { background: rgba(17, 31, 27, 0); backdrop-filter: blur(0); } }
+@keyframes review-sheet-in { from { transform: translateY(105%); } }
+
+.review-sheet-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  flex: 0 0 82px;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+  padding: 0 24px;
+}
+
+.review-title-group p {
+  margin: 0 0 2px;
+  color: var(--orange);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .16em;
+}
+
+.review-title-group h2 { margin: 0; font-size: 25px; letter-spacing: -.035em; }
+
+.month-navigation {
+  display: grid;
+  grid-template-columns: 36px minmax(130px, auto) 36px;
+  align-items: center;
+  gap: 8px;
+}
+
+.month-navigation strong {
+  min-width: 130px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -.025em;
+  text-align: center;
+}
+
+.month-navigation button,
+.review-close-button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: rgba(255,255,255,.55);
+  cursor: pointer;
+  transition: border-color .15s, background .15s, transform .15s;
+}
+
+.month-navigation button:hover,
+.review-close-button:hover { border-color: #b5bcb7; background: white; transform: translateY(-1px); }
+.month-navigation svg, .review-close-button svg, .day-detail-header svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.review-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.today-button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  padding: 8px 13px;
+  color: #5f6d65;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.today-button:hover { border-color: #aeb7b1; background: white; color: var(--ink); }
+
+.review-sheet-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  padding: 0 22px 22px;
+}
+
+.calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  flex: 0 0 34px;
+  align-items: center;
+  color: #87918b;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+.calendar-weekdays .is-weekend { color: #ad7b60; }
+
+.calendar-grid {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: repeat(6, minmax(0, 1fr));
+  overflow: hidden;
+  border-top: 1px solid #d8d8d0;
+  border-left: 1px solid #d8d8d0;
+  border-radius: 14px;
+  background: #e1e0d8;
+  transition: opacity .15s;
+}
+.calendar-grid.is-loading { opacity: .56; }
+
+.calendar-day {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0;
+  border-right: 1px solid #d8d8d0;
+  border-bottom: 1px solid #d8d8d0;
+  border-radius: 0;
+  background: #fbfaf5;
+  padding: 7px 8px;
+  color: var(--ink);
+  text-align: left;
+  transition: background .15s, box-shadow .15s;
+}
+.calendar-day:disabled { color: var(--ink); }
+.calendar-day.is-outside { background: #f0eee8; color: #a9ada9; }
+.calendar-day.has-records { cursor: pointer; }
+.calendar-day.has-records:hover { background: #f2f6f1; box-shadow: inset 0 0 0 1px #b7c6bc; }
+.calendar-day.is-selected { position: relative; z-index: 1; background: #edf4ee; box-shadow: inset 0 0 0 2px #6f9180; }
+
+.calendar-day-header {
+  display: flex;
+  height: 24px;
+  flex: 0 0 24px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+.calendar-day-number {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  flex: 0 0 23px;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.calendar-day.is-today .calendar-day-number { background: var(--orange); color: white; }
+.calendar-day-count {
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--green-soft);
+  padding: 2px 5px;
+  color: #496a5a;
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.calendar-day-items {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.calendar-item {
+  display: block;
+  overflow: hidden;
+  height: 22px;
+  flex: 0 0 22px;
+  padding: 2px 4px;
+  border-radius: 5px;
+  color: #45564d;
+  font-size: 11px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.calendar-item:nth-child(odd) { background: rgba(220, 233, 223, .46); }
+.calendar-item-summary { background: transparent !important; color: var(--orange); font-weight: 700; }
+
+.day-detail-popover {
+  position: fixed;
+  z-index: 65;
+  display: flex;
+  width: min(380px, calc(100vw - 28px));
+  max-height: min(520px, 72vh);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.85);
+  border-radius: 20px;
+  background: rgba(255, 253, 247, .98);
+  box-shadow: 0 22px 80px rgba(24, 39, 33, .25);
+  animation: day-popover-in .18s ease-out;
+}
+@keyframes day-popover-in { from { opacity: 0; transform: translateY(5px) scale(.985); } }
+
+.day-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  padding: 18px 18px 15px;
+}
+.day-detail-header p { margin: 0 0 4px; color: var(--orange); font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+.day-detail-header h3 { margin: 0; font-size: 18px; letter-spacing: -.025em; }
+.day-detail-header button {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  flex: 0 0 31px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.day-detail-header button:hover { background: #efeee8; }
+
+.day-detail-list {
+  overflow-y: auto;
+  margin: 0;
+  padding: 5px 18px 14px;
+  list-style: none;
+  overscroll-behavior: contain;
+}
+.day-detail-list li {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 11px;
+  border-bottom: 1px solid #ebe8df;
+  padding: 12px 0;
+}
+.day-detail-list li:last-child { border-bottom: 0; }
+.day-detail-list time { padding-top: 2px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.day-detail-list p { margin: 0; color: var(--ink); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 
 @media (max-width: 600px) {
   .app-shell { width: min(100% - 28px, 760px); padding-top: 30px; }
@@ -301,6 +569,40 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   .backfill-hint, .keyboard-hint { display: none; }
   .date-panel { align-items: flex-start; flex-direction: column; gap: 8px; }
   .date-panel input { width: 100%; max-width: none; }
+
+  .review-backdrop { padding: 0 6px; }
+  .review-sheet { border-radius: 22px 22px 0 0; }
+  .review-sheet-header { grid-template-columns: auto 1fr auto; flex-basis: 68px; gap: 8px; padding: 0 12px; }
+  .review-title-group p { display: none; }
+  .review-title-group h2 { font-size: 19px; }
+  .month-navigation { grid-template-columns: 31px minmax(92px, 1fr) 31px; gap: 3px; }
+  .month-navigation strong { min-width: 92px; font-size: 15px; }
+  .month-navigation button, .review-close-button { width: 31px; height: 31px; }
+  .today-button { display: none; }
+  .review-sheet-body { padding: 0 8px 10px; }
+  .calendar-weekdays { flex-basis: 28px; font-size: 10px; }
+  .calendar-grid { border-radius: 10px; }
+  .calendar-day { padding: 4px; }
+  .calendar-day-header { height: 22px; flex-basis: 22px; }
+  .calendar-day-number { width: 21px; height: 21px; flex-basis: 21px; font-size: 10px; }
+  .calendar-day-count { padding: 1px 3px; font-size: 8px; }
+  .calendar-day-items { margin-top: 3px; }
+  .calendar-item { padding-inline: 2px; font-size: 10px; }
+
+  .day-detail-popover {
+    inset: auto 8px 10px !important;
+    width: auto;
+    max-height: 58dvh;
+    border-radius: 20px;
+  }
+}
+
+@media (max-height: 520px) {
+  .review-sheet-header { flex-basis: 54px; }
+  .review-title-group p { display: none; }
+  .review-title-group h2 { font-size: 18px; }
+  .calendar-weekdays { flex-basis: 24px; }
+  .review-sheet-body { padding-bottom: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -529,7 +529,7 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   padding: 2px 4px;
   border-radius: 5px;
   color: #45564d;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -541,7 +541,7 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   position: fixed;
   z-index: 65;
   display: flex;
-  width: min(380px, calc(100vw - 28px));
+  width: min(460px, calc(100vw - 28px));
   max-height: min(520px, 72vh);
   flex-direction: column;
   overflow: hidden;
@@ -559,15 +559,15 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   justify-content: space-between;
   gap: 16px;
   border-bottom: 1px solid var(--line);
-  padding: 18px 18px 15px;
+  padding: 21px 22px 18px;
 }
-.day-detail-header p { margin: 0 0 4px; color: var(--orange); font-size: 10px; font-weight: 700; letter-spacing: .08em; }
-.day-detail-header h3 { margin: 0; font-size: 18px; letter-spacing: -.025em; }
+.day-detail-header p { margin: 0 0 5px; color: var(--orange); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
+.day-detail-header h3 { margin: 0; font-size: 22px; letter-spacing: -.03em; }
 .day-detail-header button {
   display: grid;
-  width: 31px;
-  height: 31px;
-  flex: 0 0 31px;
+  width: 35px;
+  height: 35px;
+  flex: 0 0 35px;
   place-items: center;
   border: 1px solid var(--line);
   border-radius: 50%;
@@ -579,20 +579,20 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
 .day-detail-list {
   overflow-y: auto;
   margin: 0;
-  padding: 5px 18px 14px;
+  padding: 6px 22px 17px;
   list-style: none;
   overscroll-behavior: contain;
 }
 .day-detail-list li {
   display: grid;
-  grid-template-columns: 48px 1fr;
-  gap: 11px;
+  grid-template-columns: 58px 1fr;
+  gap: 15px;
   border-bottom: 1px solid #ebe8df;
-  padding: 12px 0;
+  padding: 15px 0;
 }
 .day-detail-list li:last-child { border-bottom: 0; }
-.day-detail-list time { padding-top: 2px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-.day-detail-list p { margin: 0; color: var(--ink); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.day-detail-list time { padding-top: 2px; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.day-detail-list p { margin: 0; color: var(--ink); font-size: 15px; line-height: 1.62; overflow-wrap: anywhere; }
 
 @media (max-width: 600px) {
   .app-shell { width: min(100% - 28px, 760px); padding-top: 30px; }
@@ -621,7 +621,7 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   .calendar-day-number { width: 21px; height: 21px; flex-basis: 21px; font-size: 10px; }
   .calendar-day-count { padding: 1px 3px; font-size: 8px; }
   .calendar-day-items { margin-top: 3px; }
-  .calendar-item { padding-inline: 2px; font-size: 10px; }
+  .calendar-item { padding-inline: 2px; font-size: 12px; }
 
   .day-detail-popover {
     inset: auto 8px 10px !important;

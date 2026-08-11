@@ -196,18 +196,22 @@ export function App() {
           {isBackfillOpen && <span className="backfill-hint">保存后将自动恢复当前时间</span>}
         </div>
 
-        {isBackfillOpen && (
-          <div className="date-panel">
-            <label htmlFor="record-time">这件事发生在</label>
-            <input
-              id="record-time"
-              type="datetime-local"
-              value={customTime}
-              onInput={(event) => setCustomTime(event.currentTarget.value)}
-              required
-            />
+        <div className="date-panel-shell" aria-hidden={!isBackfillOpen}>
+          <div className="date-panel-clip">
+            <div className="date-panel">
+              <label htmlFor="record-time">这件事发生在</label>
+              <input
+                id="record-time"
+                type="datetime-local"
+                value={customTime}
+                onInput={(event) => setCustomTime(event.currentTarget.value)}
+                disabled={!isBackfillOpen}
+                tabIndex={isBackfillOpen ? 0 : -1}
+                required
+              />
+            </div>
           </div>
-        )}
+        </div>
 
         <form className="input-row" onSubmit={submitRecord}>
           <input

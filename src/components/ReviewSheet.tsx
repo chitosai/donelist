@@ -230,6 +230,8 @@ function DayDetailPopover({ selected, onClose }: { selected: SelectedDay; onClos
 }
 
 export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
+  const [rendered, setRendered] = useState(open);
+  const [closing, setClosing] = useState(false);
   const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(new Date()));
   const [records, setRecords] = useState<DoneRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -250,13 +252,22 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
   }, [records]);
 
   useEffect(() => {
-    if (!open) return;
-    setVisibleMonth(startOfMonth(new Date()));
-    setSelectedDay(null);
-  }, [open]);
+    if (open) {
+      setRendered(true);
+      setClosing(false);
+      setVisibleMonth(startOfMonth(new Date()));
+      setSelectedDay(null);
+      return;
+    }
+
+    if (rendered) {
+      setSelectedDay(null);
+      setClosing(true);
+    }
+  }, [open, rendered]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!rendered) return;
     let cancelled = false;
     setLoading(true);
     repository
@@ -287,10 +298,10 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [open, onClose, selectedDay]);
+  }, [rendered, onClose, selectedDay]);
 
   useLayoutEffect(() => {
-    if (!open || !gridRef.current) return;
+    if (!rendered || !gridRef.current) return;
     const grid = gridRef.current;
 
     const calculateCapacity = () => {
@@ -307,9 +318,9 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
     const observer = new ResizeObserver(calculateCapacity);
     observer.observe(grid);
     return () => observer.disconnect();
-  }, [open, visibleMonth]);
+  }, [rendered, visibleMonth]);
 
-  if (!open) return null;
+  if (!rendered) return null;
 
   function changeMonth(offset: number) {
     setSelectedDay(null);
@@ -338,10 +349,17 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
 
   return (
     <div
-      className="review-backdrop"
+      className={`review-backdrop${closing ? " is-closing" : ""}`}
       role="presentation"
+      aria-hidden={closing}
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (!closing && event.target === event.currentTarget) onClose();
+      }}
+      onAnimationEnd={(event) => {
+        if (closing && event.target === event.currentTarget) {
+          setRendered(false);
+          setClosing(false);
+        }
       }}
     >
       <section

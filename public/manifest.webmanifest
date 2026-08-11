@@ -1,0 +1,18 @@
+{
+  "name": "Done List",
+  "short_name": "Done List",
+  "description": "为月度回顾准备的轻量完成记录工具",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f1e8",
+  "theme_color": "#f4f1e8",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

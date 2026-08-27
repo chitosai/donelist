@@ -9,6 +9,7 @@ import {
 import type { RecordRepository } from "../data/RecordRepository";
 import type { DoneRecord } from "../domain/DoneRecord";
 import { compareHighlightPriority } from "../domain/recordOrdering";
+import { calculateCalendarPreviewCapacity } from "./calendarCapacity";
 
 type ReviewSheetProps = {
   open: boolean;
@@ -31,7 +32,6 @@ type SelectedDay = {
 };
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
-const ITEM_ROW_HEIGHT = 25;
 
 function startOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 1);
@@ -344,7 +344,7 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
       const style = getComputedStyle(sampleCell);
       const verticalPadding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
       const availableHeight = sampleCell.clientHeight - verticalPadding - header.offsetHeight - 4;
-      setPreviewCapacity(Math.max(0, Math.floor(availableHeight / ITEM_ROW_HEIGHT)));
+      setPreviewCapacity(calculateCalendarPreviewCapacity(availableHeight));
     };
 
     calculateCapacity();

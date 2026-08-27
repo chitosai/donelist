@@ -99,6 +99,7 @@ type CalendarDayProps = {
   previewCapacity: number;
   selected: boolean;
   onSelect: (date: Date, records: DoneRecord[], element: HTMLElement) => void;
+  onToggleHighlight: (record: DoneRecord) => void;
 };
 
 function CalendarDay({
@@ -108,6 +109,7 @@ function CalendarDay({
   previewCapacity,
   selected,
   onSelect,
+  onToggleHighlight,
 }: CalendarDayProps) {
   const isOutside = date.getMonth() !== currentMonth;
   const isToday = sameDay(date, new Date());
@@ -135,9 +137,8 @@ function CalendarDay({
   const label = `${formatDayTitle(date)}，${records.length ? `${records.length} 条记录` : "没有记录"}`;
 
   return (
-    <button
+    <div
       className={`calendar-day${isOutside ? " is-outside" : ""}${isToday ? " is-today" : ""}${records.length ? " has-records" : ""}${selected ? " is-selected" : ""}`}
-      type="button"
       role="gridcell"
       aria-label={label}
       aria-selected={selected}
@@ -145,6 +146,12 @@ function CalendarDay({
       tabIndex={isInactive ? -1 : 0}
       onClick={(event) => {
         if (!isInactive) onSelect(date, sortedRecords, event.currentTarget);
+      }}
+      onKeyDown={(event) => {
+        if (!isInactive && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          onSelect(date, sortedRecords, event.currentTarget);
+        }
       }}
     >
       <span className="calendar-day-header">
@@ -161,9 +168,19 @@ function CalendarDay({
           ) : (
             <>
               {visibleRecords.map((record) => (
-                <span className="calendar-item" key={record.id} title={record.content}>
+                <button
+                  className={`calendar-item${record.highlighted ? " is-highlighted" : ""}`}
+                  key={record.id}
+                  type="button"
+                  title={record.content}
+                  aria-pressed={record.highlighted === true}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onToggleHighlight(record);
+                  }}
+                >
                   {record.content}
-                </span>
+                </button>
               ))}
               {hiddenCount > 0 && (
                 <span className="calendar-item calendar-item-summary">+{hiddenCount} 条</span>
@@ -172,11 +189,19 @@ function CalendarDay({
           )}
         </span>
       )}
-    </button>
+    </div>
   );
 }
 
-function DayDetailPopover({ selected, onClose }: { selected: SelectedDay; onClose: () => void }) {
+function DayDetailPopover({
+  selected,
+  onClose,
+  onToggleHighlight,
+}: {
+  selected: SelectedDay;
+  onClose: () => void;
+  onToggleHighlight: (record: DoneRecord) => void;
+}) {
   const popoverRef = useRef<HTMLElement>(null);
   const [position, setPosition] = useState({ top: selected.anchor.top, left: selected.anchor.right + 12 });
 
@@ -224,8 +249,15 @@ function DayDetailPopover({ selected, onClose }: { selected: SelectedDay; onClos
       <ol className="day-detail-list">
         {selected.records.map((record) => (
           <li key={record.id}>
-            <time dateTime={record.happenedAt}>{formatItemTime(record.happenedAt)}</time>
-            <p>{record.content}</p>
+            <button
+              className={`day-detail-item${record.highlighted ? " is-highlighted" : ""}`}
+              type="button"
+              aria-pressed={record.highlighted === true}
+              onClick={() => onToggleHighlight(record)}
+            >
+              <time dateTime={record.happenedAt}>{formatItemTime(record.happenedAt)}</time>
+              <p>{record.content}</p>
+            </button>
           </li>
         ))}
       </ol>
@@ -352,6 +384,25 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
     }
   }
 
+  async function toggleHighlight(record: DoneRecord) {
+    const nextRecord = { ...record, highlighted: !record.highlighted };
+    const applyRecord = (candidate: DoneRecord) => {
+      setRecords((current) => current.map((item) => item.id === candidate.id ? candidate : item));
+      setSelectedDay((current) => current ? {
+        ...current,
+        records: current.records.map((item) => item.id === candidate.id ? candidate : item),
+      } : current);
+    };
+
+    applyRecord(nextRecord);
+    try {
+      await repository.update(nextRecord);
+    } catch (error) {
+      applyRecord(record);
+      console.error("保存高亮状态失败", error);
+    }
+  }
+
   return (
     <div
       className={`review-backdrop${closing ? " is-closing" : ""}`}
@@ -432,6 +483,7 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
                   previewCapacity={previewCapacity}
                   selected={selectedDay?.key === key}
                   onSelect={selectDay}
+                  onToggleHighlight={toggleHighlight}
                 />
               );
             })}
@@ -440,7 +492,11 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
       </section>
 
       {selectedDay && (
-        <DayDetailPopover selected={selectedDay} onClose={() => setSelectedDay(null)} />
+        <DayDetailPopover
+          selected={selectedDay}
+          onClose={() => setSelectedDay(null)}
+          onToggleHighlight={toggleHighlight}
+        />
       )}
     </div>
   );

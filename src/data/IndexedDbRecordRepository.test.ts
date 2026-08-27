@@ -23,7 +23,17 @@ describe("IndexedDbRecordRepository", () => {
     const recent = await repository.getRecent(10);
 
     expect(created.content).toBe("完成 v1 设计");
+    expect(created.highlighted).toBe(false);
     expect(recent).toEqual([created]);
+  });
+
+  it("persists a record highlight", async () => {
+    const repository = createRepository();
+    const record = await repository.create({ content: "月度重点", happenedAt: new Date().toISOString() });
+
+    await repository.update({ ...record, highlighted: true });
+
+    expect((await repository.getRecent(10))[0].highlighted).toBe(true);
   });
 
   it("queries records by their happened month", async () => {

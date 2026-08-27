@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { RecordRepository } from "../data/RecordRepository";
 import type { DoneRecord } from "../domain/DoneRecord";
+import { compareHighlightPriority } from "../domain/recordOrdering";
 
 type ReviewSheetProps = {
   open: boolean;
@@ -117,8 +118,7 @@ function CalendarDay({
     [records],
   );
   const prioritizedRecords = useMemo(
-    () => [...chronologicalRecords].sort((left, right) =>
-      Number(right.isHighlighted) - Number(left.isHighlighted)),
+    () => [...chronologicalRecords].sort(compareHighlightPriority),
     [chronologicalRecords],
   );
 

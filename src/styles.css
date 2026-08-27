@@ -533,7 +533,6 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   border-radius: 5px;
   background: transparent;
   color: #45564d;
-  cursor: pointer;
   font-size: 13px;
   line-height: 18px;
   text-align: left;
@@ -542,14 +541,12 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   transition: background .16s, color .16s, box-shadow .16s;
 }
 .calendar-item:nth-child(odd) { background: rgba(220, 233, 223, .46); }
-.calendar-item:hover { background: rgba(205, 221, 209, .76); }
 .calendar-item.is-highlighted {
   background: #f8dfad;
   color: #5f3b20;
   box-shadow: inset 3px 0 0 #d77a3f;
   font-weight: 650;
 }
-.calendar-item.is-highlighted:hover { background: #f4d495; }
 .calendar-item-summary { background: transparent !important; color: var(--orange); font-weight: 700; }
 
 .day-detail-popover {

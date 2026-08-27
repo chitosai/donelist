@@ -99,7 +99,6 @@ type CalendarDayProps = {
   previewCapacity: number;
   selected: boolean;
   onSelect: (date: Date, records: DoneRecord[], element: HTMLElement) => void;
-  onToggleHighlight: (record: DoneRecord) => void;
 };
 
 function CalendarDay({
@@ -109,7 +108,6 @@ function CalendarDay({
   previewCapacity,
   selected,
   onSelect,
-  onToggleHighlight,
 }: CalendarDayProps) {
   const isOutside = date.getMonth() !== currentMonth;
   const isToday = sameDay(date, new Date());
@@ -173,19 +171,13 @@ function CalendarDay({
           ) : (
             <>
               {visibleRecords.map((record) => (
-                <button
+                <span
                   className={`calendar-item${record.highlighted ? " is-highlighted" : ""}`}
                   key={record.id}
-                  type="button"
                   title={record.content}
-                  aria-pressed={record.highlighted === true}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onToggleHighlight(record);
-                  }}
                 >
                   {record.content}
-                </button>
+                </span>
               ))}
               {hiddenCount > 0 && (
                 <span className="calendar-item calendar-item-summary">+{hiddenCount} 条</span>
@@ -488,7 +480,6 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
                   previewCapacity={previewCapacity}
                   selected={selectedDay?.key === key}
                   onSelect={selectDay}
-                  onToggleHighlight={toggleHighlight}
                 />
               );
             })}

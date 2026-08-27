@@ -114,23 +114,28 @@ function CalendarDay({
   const isOutside = date.getMonth() !== currentMonth;
   const isToday = sameDay(date, new Date());
   const isInactive = isOutside || records.length === 0;
-  const sortedRecords = useMemo(
+  const chronologicalRecords = useMemo(
     () => [...records].sort((left, right) => left.happenedAt.localeCompare(right.happenedAt)),
     [records],
+  );
+  const prioritizedRecords = useMemo(
+    () => [...chronologicalRecords].sort((left, right) =>
+      Number(Boolean(right.highlighted)) - Number(Boolean(left.highlighted))),
+    [chronologicalRecords],
   );
 
   let visibleRecords: DoneRecord[] = [];
   let hiddenCount = 0;
   let summaryOnly = false;
 
-  if (!isOutside && sortedRecords.length > 0 && previewCapacity > 0) {
-    if (sortedRecords.length <= previewCapacity) {
-      visibleRecords = sortedRecords;
+  if (!isOutside && prioritizedRecords.length > 0 && previewCapacity > 0) {
+    if (prioritizedRecords.length <= previewCapacity) {
+      visibleRecords = prioritizedRecords;
     } else if (previewCapacity === 1) {
       summaryOnly = true;
     } else {
-      visibleRecords = sortedRecords.slice(0, previewCapacity - 1);
-      hiddenCount = sortedRecords.length - visibleRecords.length;
+      visibleRecords = prioritizedRecords.slice(0, previewCapacity - 1);
+      hiddenCount = prioritizedRecords.length - visibleRecords.length;
     }
   }
 
@@ -145,12 +150,12 @@ function CalendarDay({
       aria-disabled={isInactive}
       tabIndex={isInactive ? -1 : 0}
       onClick={(event) => {
-        if (!isInactive) onSelect(date, sortedRecords, event.currentTarget);
+        if (!isInactive) onSelect(date, chronologicalRecords, event.currentTarget);
       }}
       onKeyDown={(event) => {
         if (!isInactive && (event.key === "Enter" || event.key === " ")) {
           event.preventDefault();
-          onSelect(date, sortedRecords, event.currentTarget);
+          onSelect(date, chronologicalRecords, event.currentTarget);
         }
       }}
     >

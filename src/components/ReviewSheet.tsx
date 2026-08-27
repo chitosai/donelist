@@ -30,7 +30,7 @@ type SelectedDay = {
 };
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
-const ITEM_ROW_HEIGHT = 22;
+const ITEM_ROW_HEIGHT = 25;
 
 function startOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 1);

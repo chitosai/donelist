@@ -519,6 +519,7 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   display: flex;
   min-width: 0;
   flex-direction: column;
+  gap: 3px;
   overflow: hidden;
   margin-top: 4px;
 }
@@ -529,7 +530,7 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   height: 22px;
   flex: 0 0 22px;
   border: 0;
-  padding: 2px 4px;
+  padding: 2px 7px;
   border-radius: 5px;
   background: transparent;
   color: #45564d;
@@ -649,8 +650,8 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   .calendar-day-header { height: 22px; flex-basis: 22px; }
   .calendar-day-number { width: 21px; height: 21px; flex-basis: 21px; font-size: 10px; }
   .calendar-day-count { padding: 1px 3px; font-size: 8px; }
-  .calendar-day-items { margin-top: 3px; }
-  .calendar-item { padding-inline: 2px; font-size: 12px; }
+  .calendar-day-items { gap: 2px; margin-top: 3px; }
+  .calendar-item { padding-inline: 4px; font-size: 12px; }
 
   .day-detail-popover {
     inset: auto 8px 10px !important;

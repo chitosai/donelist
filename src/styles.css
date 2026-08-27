@@ -326,8 +326,8 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
 
 .review-sheet {
   display: flex;
-  width: min(1480px, 100%);
-  height: 90dvh;
+  width: min(1700px, 100%);
+  height: 92vh;
   min-height: 340px;
   flex-direction: column;
   overflow: hidden;

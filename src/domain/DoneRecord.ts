@@ -4,7 +4,7 @@ export type DoneRecord = {
   happenedAt: string;
   createdAt: string;
   updatedAt: string;
-  highlighted?: boolean;
+  isHighlighted: boolean;
 };
 
 export type NewDoneRecord = Pick<DoneRecord, "content" | "happenedAt">;

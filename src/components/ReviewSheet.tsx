@@ -118,7 +118,7 @@ function CalendarDay({
   );
   const prioritizedRecords = useMemo(
     () => [...chronologicalRecords].sort((left, right) =>
-      Number(Boolean(right.highlighted)) - Number(Boolean(left.highlighted))),
+      Number(right.isHighlighted) - Number(left.isHighlighted)),
     [chronologicalRecords],
   );
 
@@ -172,7 +172,7 @@ function CalendarDay({
             <>
               {visibleRecords.map((record) => (
                 <span
-                  className={`calendar-item${record.highlighted ? " is-highlighted" : ""}`}
+                  className={`calendar-item${record.isHighlighted ? " is-highlighted" : ""}`}
                   key={record.id}
                   title={record.content}
                 >
@@ -247,9 +247,9 @@ function DayDetailPopover({
         {selected.records.map((record) => (
           <li key={record.id}>
             <button
-              className={`day-detail-item${record.highlighted ? " is-highlighted" : ""}`}
+              className={`day-detail-item${record.isHighlighted ? " is-highlighted" : ""}`}
               type="button"
-              aria-pressed={record.highlighted === true}
+              aria-pressed={record.isHighlighted}
               onClick={() => onToggleHighlight(record)}
             >
               <time dateTime={record.happenedAt}>{formatItemTime(record.happenedAt)}</time>
@@ -382,7 +382,7 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
   }
 
   async function toggleHighlight(record: DoneRecord) {
-    const nextRecord = { ...record, highlighted: !record.highlighted };
+    const nextRecord = { ...record, isHighlighted: !record.isHighlighted };
     const applyRecord = (candidate: DoneRecord) => {
       setRecords((current) => current.map((item) => item.id === candidate.id ? candidate : item));
       setSelectedDay((current) => current ? {

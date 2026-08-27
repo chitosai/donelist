@@ -39,7 +39,7 @@ export class IndexedDbRecordRepository implements RecordRepository {
       happenedAt: input.happenedAt,
       createdAt: now,
       updatedAt: now,
-      highlighted: false,
+      isHighlighted: false,
     };
 
     await this.db.records.add(record);
@@ -92,7 +92,7 @@ export class IndexedDbRecordRepository implements RecordRepository {
         typeof record.happenedAt === "string" &&
         typeof record.createdAt === "string" &&
         typeof record.updatedAt === "string" &&
-        (record.highlighted === undefined || typeof record.highlighted === "boolean"),
+        typeof record.isHighlighted === "boolean",
     );
 
     await this.db.records.bulkPut(records);

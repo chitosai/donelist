@@ -97,14 +97,6 @@ function Icon({ name }: { name: "left" | "right" | "close" }) {
   );
 }
 
-function MoreIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M5 10h.01M10 10h.01M15 10h.01" />
-    </svg>
-  );
-}
-
 type CalendarDayProps = {
   date: Date;
   records: DoneRecord[];
@@ -253,7 +245,7 @@ function DayDetailPopover({
       aria-labelledby="day-detail-title"
       onMouseDown={(event) => {
         const target = event.target as HTMLElement;
-        if (!target.closest(".day-detail-actions, .day-detail-action-menu")) {
+        if (!target.closest(".day-detail-row")) {
           setActionMenuRecordId(null);
         }
         event.stopPropagation();
@@ -283,31 +275,28 @@ function DayDetailPopover({
             <button
               className={`day-detail-item${record.isHighlighted ? " is-highlighted" : ""}`}
               type="button"
-              aria-pressed={record.isHighlighted}
+              aria-haspopup="menu"
+              aria-expanded={actionMenuRecordId === record.id}
               onClick={() => {
-                setActionMenuRecordId(null);
-                onToggleHighlight(record);
+                setActionMenuRecordId((current) => current === record.id ? null : record.id);
               }}
             >
               <time dateTime={record.happenedAt}>{formatItemTime(record.happenedAt)}</time>
               <p>{record.content}</p>
             </button>
-            <div className="day-detail-actions">
-              <button
-                className="day-detail-more"
-                type="button"
-                aria-label={`更多操作：${record.content}`}
-                aria-haspopup="menu"
-                aria-expanded={actionMenuRecordId === record.id}
-                onClick={() => {
-                  setActionMenuRecordId((current) => current === record.id ? null : record.id);
-                }}
-              >
-                <MoreIcon />
-              </button>
-            </div>
             {actionMenuRecordId === record.id && (
               <div className="day-detail-action-menu" role="menu" aria-label={`操作：${record.content}`}>
+                <button
+                  className="is-highlight-action"
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setActionMenuRecordId(null);
+                    onToggleHighlight(record);
+                  }}
+                >
+                  {record.isHighlighted ? "取消高亮" : "高亮"}
+                </button>
                 <button
                   type="button"
                   role="menuitem"

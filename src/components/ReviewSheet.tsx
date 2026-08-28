@@ -4,17 +4,21 @@ import {
   useMemo,
   useRef,
   useState,
+  type FormEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import type { RecordRepository } from "../data/RecordRepository";
 import type { DoneRecord } from "../domain/DoneRecord";
 import { compareHighlightPriority } from "../domain/recordOrdering";
+import { fromDateTimeLocalValue, toDateTimeLocalValue } from "../utils/time";
 import { calculateCalendarPreviewCapacity } from "./calendarCapacity";
+import { deleteRecordFromCollection, updateRecordCollection } from "./reviewRecordState";
 
 type ReviewSheetProps = {
   open: boolean;
   repository: RecordRepository;
   onClose: () => void;
+  onRecordsChanged?: () => void | Promise<void>;
 };
 
 type AnchorRect = {
@@ -89,6 +93,14 @@ function Icon({ name }: { name: "left" | "right" | "close" }) {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
       <path d={name === "left" ? "m12.5 5-5 5 5 5" : "m7.5 5 5 5-5 5"} />
+    </svg>
+  );
+}
+
+function MoreIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M5 10h.01M10 10h.01M15 10h.01" />
     </svg>
   );
 }
@@ -194,13 +206,20 @@ function DayDetailPopover({
   selected,
   onClose,
   onToggleHighlight,
+  onEditRecord,
+  onDeleteRecord,
 }: {
   selected: SelectedDay;
   onClose: () => void;
   onToggleHighlight: (record: DoneRecord) => void;
+  onEditRecord: (record: DoneRecord) => void;
+  onDeleteRecord: (record: DoneRecord) => void;
 }) {
   const popoverRef = useRef<HTMLElement>(null);
   const [position, setPosition] = useState({ top: selected.anchor.top, left: selected.anchor.right + 12 });
+  const [actionMenuRecordId, setActionMenuRecordId] = useState<string | null>(null);
+
+  useEffect(() => setActionMenuRecordId(null), [selected.key]);
 
   useLayoutEffect(() => {
     const popover = popoverRef.current;
@@ -222,7 +241,7 @@ function DayDetailPopover({
     );
 
     setPosition({ top, left });
-  }, [selected]);
+  }, [selected, actionMenuRecordId]);
 
   return (
     <aside
@@ -232,7 +251,19 @@ function DayDetailPopover({
       role="dialog"
       aria-modal="false"
       aria-labelledby="day-detail-title"
-      onMouseDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => {
+        const target = event.target as HTMLElement;
+        if (!target.closest(".day-detail-actions, .day-detail-action-menu")) {
+          setActionMenuRecordId(null);
+        }
+        event.stopPropagation();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && actionMenuRecordId) {
+          event.stopPropagation();
+          setActionMenuRecordId(null);
+        }
+      }}
     >
       <header className="day-detail-header">
         <div>
@@ -245,16 +276,61 @@ function DayDetailPopover({
       </header>
       <ol className="day-detail-list">
         {selected.records.map((record) => (
-          <li key={record.id}>
+          <li
+            className={`day-detail-row${actionMenuRecordId === record.id ? " has-open-menu" : ""}`}
+            key={record.id}
+          >
             <button
               className={`day-detail-item${record.isHighlighted ? " is-highlighted" : ""}`}
               type="button"
               aria-pressed={record.isHighlighted}
-              onClick={() => onToggleHighlight(record)}
+              onClick={() => {
+                setActionMenuRecordId(null);
+                onToggleHighlight(record);
+              }}
             >
               <time dateTime={record.happenedAt}>{formatItemTime(record.happenedAt)}</time>
               <p>{record.content}</p>
             </button>
+            <div className="day-detail-actions">
+              <button
+                className="day-detail-more"
+                type="button"
+                aria-label={`更多操作：${record.content}`}
+                aria-haspopup="menu"
+                aria-expanded={actionMenuRecordId === record.id}
+                onClick={() => {
+                  setActionMenuRecordId((current) => current === record.id ? null : record.id);
+                }}
+              >
+                <MoreIcon />
+              </button>
+            </div>
+            {actionMenuRecordId === record.id && (
+              <div className="day-detail-action-menu" role="menu" aria-label={`操作：${record.content}`}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setActionMenuRecordId(null);
+                    onEditRecord(record);
+                  }}
+                >
+                  编辑
+                </button>
+                <button
+                  className="is-danger"
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setActionMenuRecordId(null);
+                    onDeleteRecord(record);
+                  }}
+                >
+                  删除
+                </button>
+              </div>
+            )}
           </li>
         ))}
       </ol>
@@ -262,7 +338,7 @@ function DayDetailPopover({
   );
 }
 
-export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
+export function ReviewSheet({ open, repository, onClose, onRecordsChanged }: ReviewSheetProps) {
   const [rendered, setRendered] = useState(open);
   const [closing, setClosing] = useState(false);
   const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(new Date()));
@@ -270,6 +346,13 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
   const [loading, setLoading] = useState(false);
   const [selectedDay, setSelectedDay] = useState<SelectedDay | null>(null);
   const [previewCapacity, setPreviewCapacity] = useState(0);
+  const [editingRecord, setEditingRecord] = useState<DoneRecord | null>(null);
+  const [pendingDeleteRecord, setPendingDeleteRecord] = useState<DoneRecord | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [editTime, setEditTime] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [isDeletingRecord, setIsDeletingRecord] = useState(false);
+  const [reviewNotice, setReviewNotice] = useState("");
   const gridRef = useRef<HTMLDivElement>(null);
 
   const calendarDays = useMemo(() => buildCalendarDays(visibleMonth), [visibleMonth]);
@@ -290,14 +373,24 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
       setClosing(false);
       setVisibleMonth(startOfMonth(new Date()));
       setSelectedDay(null);
+      setEditingRecord(null);
+      setPendingDeleteRecord(null);
       return;
     }
 
     if (rendered) {
       setSelectedDay(null);
+      setEditingRecord(null);
+      setPendingDeleteRecord(null);
       setClosing(true);
     }
   }, [open, rendered]);
+
+  useEffect(() => {
+    if (!reviewNotice) return;
+    const timeout = window.setTimeout(() => setReviewNotice(""), 2600);
+    return () => window.clearTimeout(timeout);
+  }, [reviewNotice]);
 
   useEffect(() => {
     if (!rendered) return;
@@ -322,7 +415,9 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
     document.body.style.overflow = "hidden";
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        if (selectedDay) setSelectedDay(null);
+        if (editingRecord) setEditingRecord(null);
+        else if (pendingDeleteRecord) setPendingDeleteRecord(null);
+        else if (selectedDay) setSelectedDay(null);
         else onClose();
       }
     };
@@ -331,7 +426,7 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [rendered, onClose, selectedDay]);
+  }, [rendered, onClose, selectedDay, editingRecord, pendingDeleteRecord]);
 
   useLayoutEffect(() => {
     if (!rendered || !gridRef.current) return;
@@ -378,6 +473,87 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
     const target = event.target as HTMLElement;
     if (!target.closest(".calendar-day.has-records")) {
       setSelectedDay(null);
+    }
+  }
+
+  function openRecordEditor(record: DoneRecord) {
+    setEditingRecord(record);
+    setEditContent(record.content);
+    setEditTime(toDateTimeLocalValue(new Date(record.happenedAt)));
+  }
+
+  function isRecordInVisibleMonth(record: DoneRecord): boolean {
+    const date = new Date(record.happenedAt);
+    return date.getFullYear() === visibleMonth.getFullYear() &&
+      date.getMonth() === visibleMonth.getMonth();
+  }
+
+  function applyEditedRecord(record: DoneRecord) {
+    setRecords((current) => updateRecordCollection(current, record, isRecordInVisibleMonth(record)));
+    setSelectedDay((current) => {
+      if (!current) return null;
+      const nextRecords = updateRecordCollection(
+        current.records,
+        record,
+        localDateKey(new Date(record.happenedAt)) === current.key,
+      );
+      return nextRecords.length ? { ...current, records: nextRecords } : null;
+    });
+  }
+
+  function applyDeletedRecord(recordId: string) {
+    setRecords((current) => deleteRecordFromCollection(current, recordId));
+    setSelectedDay((current) => {
+      if (!current) return null;
+      const nextRecords = deleteRecordFromCollection(current.records, recordId);
+      return nextRecords.length ? { ...current, records: nextRecords } : null;
+    });
+  }
+
+  async function syncRecentRecords() {
+    try {
+      await onRecordsChanged?.();
+    } catch (error) {
+      console.error("刷新最近记录失败", error);
+    }
+  }
+
+  async function saveRecordEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!editingRecord || !editContent.trim() || isSavingEdit) return;
+
+    setIsSavingEdit(true);
+    try {
+      const nextRecord = {
+        ...editingRecord,
+        content: editContent.trim(),
+        happenedAt: fromDateTimeLocalValue(editTime),
+      };
+      await repository.update(nextRecord);
+      applyEditedRecord(nextRecord);
+      setEditingRecord(null);
+      setReviewNotice("修改已保存");
+      void syncRecentRecords();
+    } catch (error) {
+      setReviewNotice(error instanceof Error ? error.message : "修改失败，请重试。");
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }
+
+  async function deleteRecord(record: DoneRecord) {
+    if (isDeletingRecord) return;
+    setIsDeletingRecord(true);
+    try {
+      await repository.delete(record.id);
+      applyDeletedRecord(record.id);
+      setPendingDeleteRecord(null);
+      setReviewNotice("记录已删除");
+      void syncRecentRecords();
+    } catch {
+      setReviewNotice("删除失败，请重试。");
+    } finally {
+      setIsDeletingRecord(false);
     }
   }
 
@@ -492,8 +668,107 @@ export function ReviewSheet({ open, repository, onClose }: ReviewSheetProps) {
           selected={selectedDay}
           onClose={() => setSelectedDay(null)}
           onToggleHighlight={toggleHighlight}
+          onEditRecord={openRecordEditor}
+          onDeleteRecord={setPendingDeleteRecord}
         />
       )}
+
+      {editingRecord && (
+        <div
+          className="modal-backdrop review-modal-backdrop"
+          role="presentation"
+          onMouseDown={() => {
+            if (!isSavingEdit) setEditingRecord(null);
+          }}
+        >
+          <section
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="review-edit-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <h2 id="review-edit-title">编辑记录</h2>
+            <form onSubmit={saveRecordEdit}>
+              <label htmlFor="review-edit-content">内容</label>
+              <input
+                id="review-edit-content"
+                value={editContent}
+                onChange={(event) => setEditContent(event.target.value)}
+                maxLength={500}
+                autoFocus
+              />
+              <label htmlFor="review-edit-time">发生时间</label>
+              <input
+                id="review-edit-time"
+                type="datetime-local"
+                value={editTime}
+                onInput={(event) => setEditTime(event.currentTarget.value)}
+                required
+              />
+              <div className="modal-actions">
+                <button
+                  className="button-secondary"
+                  type="button"
+                  disabled={isSavingEdit}
+                  onClick={() => setEditingRecord(null)}
+                >
+                  取消
+                </button>
+                <button
+                  className="button-primary"
+                  type="submit"
+                  disabled={!editContent.trim() || isSavingEdit}
+                >
+                  {isSavingEdit ? "保存中…" : "保存修改"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {pendingDeleteRecord && (
+        <div
+          className="modal-backdrop review-modal-backdrop"
+          role="presentation"
+          onMouseDown={() => {
+            if (!isDeletingRecord) setPendingDeleteRecord(null);
+          }}
+        >
+          <section
+            className="modal-card delete-confirm"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="review-delete-title"
+            aria-describedby="review-delete-description"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <h2 id="review-delete-title">删除这条记录？</h2>
+            <p id="review-delete-description">“{pendingDeleteRecord.content}”删除后无法恢复。</p>
+            <div className="modal-actions">
+              <button
+                className="button-secondary"
+                type="button"
+                disabled={isDeletingRecord}
+                onClick={() => setPendingDeleteRecord(null)}
+              >
+                取消
+              </button>
+              <button
+                className="button-danger"
+                type="button"
+                disabled={isDeletingRecord}
+                onClick={() => void deleteRecord(pendingDeleteRecord)}
+              >
+                {isDeletingRecord ? "删除中…" : "确认删除"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {reviewNotice && <div className="toast review-toast" role="status">{reviewNotice}</div>}
     </div>
   );
 }

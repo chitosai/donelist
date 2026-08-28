@@ -345,6 +345,7 @@ export function App() {
         open={isReviewOpen}
         repository={repository}
         onClose={() => setIsReviewOpen(false)}
+        onRecordsChanged={refreshRecords}
       />
     </main>
   );

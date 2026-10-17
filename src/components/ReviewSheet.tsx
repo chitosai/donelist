@@ -637,15 +637,16 @@ export function ReviewSheet({ open, repository, onClose, onRecordsChanged }: Rev
 
           <div
             ref={gridRef}
-            className={`calendar-grid${loading ? " is-loading" : ""}`}
+            className="calendar-grid"
             role="grid"
+            aria-busy={loading}
             aria-label={`${formatMonthTitle(visibleMonth)}的完成记录`}
           >
             {calendarDays.map((date) => {
               const key = localDateKey(date);
               return (
                 <CalendarDay
-                  key={key}
+                  key={`${visibleMonth.getFullYear()}-${visibleMonth.getMonth()}-${key}`}
                   date={date}
                   records={recordsByDay.get(key) ?? []}
                   currentMonth={visibleMonth.getMonth()}

@@ -460,9 +460,7 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   border-left: 1px solid #d8d8d0;
   border-radius: 14px;
   background: #e1e0d8;
-  transition: opacity .15s;
 }
-.calendar-grid.is-loading { opacity: .56; }
 
 .calendar-day {
   display: flex;

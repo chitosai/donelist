@@ -116,7 +116,7 @@ function CalendarDay({
 }: CalendarDayProps) {
   const isOutside = date.getMonth() !== currentMonth;
   const isToday = sameDay(date, new Date());
-  const isInactive = isOutside || records.length === 0;
+  const isInactive = records.length === 0;
   const chronologicalRecords = useMemo(
     () => [...records].sort((left, right) => left.happenedAt.localeCompare(right.happenedAt)),
     [records],
@@ -130,7 +130,7 @@ function CalendarDay({
   let hiddenCount = 0;
   let summaryOnly = false;
 
-  if (!isOutside && prioritizedRecords.length > 0 && previewCapacity > 0) {
+  if (prioritizedRecords.length > 0 && previewCapacity > 0) {
     if (prioritizedRecords.length <= previewCapacity) {
       visibleRecords = prioritizedRecords;
     } else if (previewCapacity === 1) {
@@ -141,7 +141,7 @@ function CalendarDay({
     }
   }
 
-  const label = `${formatDayTitle(date)}，${records.length ? `${records.length} 条记录` : "没有记录"}`;
+  const label = `${formatDayTitle(date)}${isOutside ? "，非本月" : ""}，${records.length ? `${records.length} 条记录` : "没有记录"}`;
 
   return (
     <div
@@ -163,12 +163,12 @@ function CalendarDay({
     >
       <span className="calendar-day-header">
         <span className="calendar-day-number">{date.getDate()}</span>
-        {!isOutside && records.length > 0 && previewCapacity === 0 && (
+        {records.length > 0 && previewCapacity === 0 && (
           <span className="calendar-day-count">{records.length}条</span>
         )}
       </span>
 
-      {!isOutside && previewCapacity > 0 && (
+      {previewCapacity > 0 && (
         <span className="calendar-day-items">
           {summaryOnly ? (
             <span className="calendar-item calendar-item-summary">{records.length} 条记录</span>
@@ -345,6 +345,14 @@ export function ReviewSheet({ open, repository, onClose, onRecordsChanged }: Rev
   const gridRef = useRef<HTMLDivElement>(null);
 
   const calendarDays = useMemo(() => buildCalendarDays(visibleMonth), [visibleMonth]);
+  const calendarRange = useMemo(() => {
+    const start = calendarDays[0];
+    const lastDay = calendarDays[calendarDays.length - 1];
+    return {
+      start,
+      end: new Date(lastDay.getFullYear(), lastDay.getMonth(), lastDay.getDate() + 1),
+    };
+  }, [calendarDays]);
   const recordsByDay = useMemo(() => {
     const grouped = new Map<string, DoneRecord[]>();
     records.forEach((record) => {
@@ -386,7 +394,7 @@ export function ReviewSheet({ open, repository, onClose, onRecordsChanged }: Rev
     let cancelled = false;
     setLoading(true);
     repository
-      .getByMonth(visibleMonth.getFullYear(), visibleMonth.getMonth())
+      .getByRange(calendarRange.start, calendarRange.end)
       .then((nextRecords) => {
         if (!cancelled) setRecords(nextRecords);
       })
@@ -396,7 +404,7 @@ export function ReviewSheet({ open, repository, onClose, onRecordsChanged }: Rev
     return () => {
       cancelled = true;
     };
-  }, [open, repository, visibleMonth]);
+  }, [calendarRange, open, repository, rendered]);
 
   useEffect(() => {
     if (!open) return;
@@ -471,14 +479,13 @@ export function ReviewSheet({ open, repository, onClose, onRecordsChanged }: Rev
     setEditTime(toDateTimeLocalValue(new Date(record.happenedAt)));
   }
 
-  function isRecordInVisibleMonth(record: DoneRecord): boolean {
+  function isRecordInVisibleCalendar(record: DoneRecord): boolean {
     const date = new Date(record.happenedAt);
-    return date.getFullYear() === visibleMonth.getFullYear() &&
-      date.getMonth() === visibleMonth.getMonth();
+    return date >= calendarRange.start && date < calendarRange.end;
   }
 
   function applyEditedRecord(record: DoneRecord) {
-    setRecords((current) => updateRecordCollection(current, record, isRecordInVisibleMonth(record)));
+    setRecords((current) => updateRecordCollection(current, record, isRecordInVisibleCalendar(record)));
     setSelectedDay((current) => {
       if (!current) return null;
       const nextRecords = updateRecordCollection(

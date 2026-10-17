@@ -18,12 +18,6 @@ function createId(): string {
     `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function monthRange(year: number, month: number): [string, string] {
-  const start = new Date(year, month, 1);
-  const end = new Date(year, month + 1, 1);
-  return [start.toISOString(), end.toISOString()];
-}
-
 export class IndexedDbRecordRepository implements RecordRepository {
   readonly db: DoneListDatabase;
 
@@ -62,12 +56,15 @@ export class IndexedDbRecordRepository implements RecordRepository {
     return this.db.records.orderBy("createdAt").reverse().limit(limit).toArray();
   }
 
-  async getByMonth(year: number, month: number): Promise<DoneRecord[]> {
-    const [start, end] = monthRange(year, month);
+  async getByRange(start: Date, end: Date): Promise<DoneRecord[]> {
     return this.db.records
       .where("happenedAt")
-      .between(start, end, true, false)
+      .between(start.toISOString(), end.toISOString(), true, false)
       .sortBy("happenedAt");
+  }
+
+  async getByMonth(year: number, month: number): Promise<DoneRecord[]> {
+    return this.getByRange(new Date(year, month, 1), new Date(year, month + 1, 1));
   }
 
   async exportBackup(): Promise<RecordBackup> {

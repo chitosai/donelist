@@ -46,6 +46,21 @@ describe("IndexedDbRecordRepository", () => {
     expect(august.map((record) => record.content)).toEqual(["八月"]);
   });
 
+  it("queries records across month boundaries within a date range", async () => {
+    const repository = createRepository();
+    await repository.create({ content: "范围之前", happenedAt: new Date(2026, 7, 30, 23).toISOString() });
+    await repository.create({ content: "八月末", happenedAt: new Date(2026, 7, 31, 9).toISOString() });
+    await repository.create({ content: "九月初", happenedAt: new Date(2026, 8, 1, 9).toISOString() });
+    await repository.create({ content: "范围之后", happenedAt: new Date(2026, 8, 7, 0).toISOString() });
+
+    const visible = await repository.getByRange(
+      new Date(2026, 7, 31),
+      new Date(2026, 8, 7),
+    );
+
+    expect(visible.map((record) => record.content)).toEqual(["八月末", "九月初"]);
+  });
+
   it("round-trips records through a versioned backup", async () => {
     const source = createRepository();
     await source.create({ content: "备份我", happenedAt: new Date().toISOString() });

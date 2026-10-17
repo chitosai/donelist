@@ -5,6 +5,7 @@ export interface RecordRepository {
   update(record: DoneRecord): Promise<void>;
   delete(id: string): Promise<void>;
   getRecent(limit: number): Promise<DoneRecord[]>;
+  getByRange(start: Date, end: Date): Promise<DoneRecord[]>;
   getByMonth(year: number, month: number): Promise<DoneRecord[]>;
   exportBackup(): Promise<RecordBackup>;
   importBackup(backup: RecordBackup): Promise<number>;

@@ -11,6 +11,7 @@ import type { RecordRepository } from "../data/RecordRepository";
 import type { DoneRecord } from "../domain/DoneRecord";
 import { compareHighlightPriority } from "../domain/recordOrdering";
 import { fromDateTimeLocalValue, toDateTimeLocalValue } from "../utils/time";
+import { AutoGrowTextarea } from "./AutoGrowTextarea";
 import { calculateCalendarPreviewCapacity } from "./calendarCapacity";
 import { deleteRecordFromCollection, updateRecordCollection } from "./reviewRecordState";
 
@@ -688,8 +689,9 @@ export function ReviewSheet({ open, repository, onClose, onRecordsChanged }: Rev
             <h2 id="review-edit-title">编辑记录</h2>
             <form onSubmit={saveRecordEdit}>
               <label htmlFor="review-edit-content">内容</label>
-              <input
+              <AutoGrowTextarea
                 id="review-edit-content"
+                maxRows={10}
                 value={editContent}
                 onChange={(event) => setEditContent(event.target.value)}
                 maxLength={500}

@@ -24,10 +24,10 @@ body {
     #f4f1e8;
 }
 
-button, input { font: inherit; }
+button, input, textarea { font: inherit; }
 button { color: inherit; }
 
-button:focus-visible, input:focus-visible, summary:focus-visible {
+button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible {
   outline: 3px solid rgba(199, 107, 58, .28);
   outline-offset: 3px;
 }
@@ -156,23 +156,28 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   font-weight: 600;
 }
 
-.input-row { display: grid; grid-template-columns: 1fr 52px; gap: 10px; }
+.input-row { display: grid; grid-template-columns: 1fr 52px; align-items: end; gap: 10px; }
 
-.input-row > input {
+.input-row > textarea {
   width: 100%;
   min-width: 0;
+  min-height: 58px;
   border: 0;
   border-radius: 13px;
   background: #f0efe9;
   padding: 17px 18px;
   color: var(--ink);
   font-size: 17px;
+  line-height: 1.45;
+  overflow-y: hidden;
+  resize: none;
 }
 
-.input-row > input::placeholder { color: #969c97; }
-.input-row > input:focus { outline: 0; background: #ecece5; }
+.input-row > textarea::placeholder { color: #969c97; }
+.input-row > textarea:focus { outline: 0; background: #ecece5; }
 
 .input-row > button {
+  height: 58px;
   border: 0;
   border-radius: 13px;
   background: var(--green);
@@ -289,7 +294,8 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
 .modal-card h2 { margin: 0 0 20px; font-size: 21px; }
 .modal-card form { display: grid; }
 .modal-card label { margin: 0 0 6px; color: var(--muted); font-size: 12px; }
-.modal-card input {
+.modal-card input,
+.modal-card textarea {
   width: 100%;
   margin-bottom: 18px;
   border: 1px solid var(--line);
@@ -297,6 +303,11 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   background: #f7f5ef;
   padding: 12px 13px;
   color: var(--ink);
+}
+.modal-card textarea {
+  line-height: 1.5;
+  overflow-y: hidden;
+  resize: none;
 }
 .modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 3px; }
 .modal-actions button { border-radius: 10px; padding: 10px 15px; cursor: pointer; font-weight: 600; }

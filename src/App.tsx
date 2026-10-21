@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { AutoGrowTextarea } from "./components/AutoGrowTextarea";
 import { IndexedDbRecordRepository } from "./data/IndexedDbRecordRepository";
 import type { DoneRecord, RecordBackup } from "./domain/DoneRecord";
 import { formatRecordTime, fromDateTimeLocalValue, toDateTimeLocalValue } from "./utils/time";
@@ -51,7 +52,7 @@ export function App() {
   const [notice, setNotice] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
   const refreshRecords = useCallback(async () => {
@@ -94,8 +95,8 @@ export function App() {
     }
   }
 
-  function handleInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+  function handleInputKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
       void submitRecord();
     }
@@ -214,8 +215,9 @@ export function App() {
         </div>
 
         <form className="input-row" onSubmit={submitRecord}>
-          <input
+          <AutoGrowTextarea
             ref={inputRef}
+            maxRows={8}
             value={content}
             onChange={(event) => setContent(event.target.value)}
             onKeyDown={handleInputKeyDown}
@@ -229,7 +231,7 @@ export function App() {
             {isSaving ? "…" : "↵"}
           </button>
         </form>
-        <p className="keyboard-hint">输入后按 Enter 保存</p>
+        <p className="keyboard-hint">Enter 保存 · Shift + Enter 换行</p>
       </section>
 
       <section className="recent-section" aria-labelledby="recent-title">
@@ -297,8 +299,9 @@ export function App() {
             <h2 id="edit-title">编辑记录</h2>
             <form onSubmit={saveEdit}>
               <label htmlFor="edit-content">内容</label>
-              <input
+              <AutoGrowTextarea
                 id="edit-content"
+                maxRows={10}
                 value={editContent}
                 onChange={(event) => setEditContent(event.target.value)}
                 maxLength={500}

@@ -128,12 +128,14 @@ export function useRecordSync({
         ...signedOutState,
         phase: navigator.onLine ? "idle" : "offline",
       });
+      // Cached records are independent of outbox initialization and network I/O.
+      await onRecordsChanged();
+      if (!isCurrentScope()) return;
       await localStore.prepareUploadQueue(userId);
       if (!isCurrentScope()) return;
       const pendingChanges = await localStore.getPendingUploadCount(userId);
       if (!isCurrentScope()) return;
       setSyncState((current) => ({ ...current, pendingChanges }));
-      await onRecordsChanged();
       const guestRecords = await localStore.getGuestRecords();
       if (!isCurrentScope()) return;
       if (guestRecords.length) {

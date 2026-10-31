@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { AutoGrowTextarea } from "./components/AutoGrowTextarea";
 import { SyncPanel } from "./components/SyncPanel";
 import { GuestRecordsMergeDialog } from "./components/GuestRecordsMergeDialog";
@@ -13,6 +13,12 @@ import { useRecordSync } from "./sync/useRecordSync";
 const localStore = new IndexedDbRecordRepository("done-list", import.meta.env.VITE_SUPABASE_URL);
 const repository = new LocalRecordRepository(localStore);
 const RECENT_LIMIT = 10;
+
+type RecordsSnapshot = {
+  scopeKey: string;
+  records: DoneRecord[];
+  errorMessage: string;
+};
 
 function EditIcon() {
   return (
@@ -43,7 +49,7 @@ export function App() {
   const [content, setContent] = useState("");
   const [isBackfillOpen, setIsBackfillOpen] = useState(false);
   const [customTime, setCustomTime] = useState(() => toDateTimeLocalValue(new Date()));
-  const [records, setRecords] = useState<DoneRecord[]>([]);
+  const [recordsSnapshot, setRecordsSnapshot] = useState<RecordsSnapshot | null>(null);
   const [editing, setEditing] = useState<DoneRecord | null>(null);
   const [pendingDelete, setPendingDelete] = useState<DoneRecord | null>(null);
   const [editContent, setEditContent] = useState("");
@@ -54,10 +60,41 @@ export function App() {
   const [recordsRevision, setRecordsRevision] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
+  const recordsScopeKey = isAuthReady ? (user ? `user:${user.id}` : "guest") : null;
+  const activeRecordsScopeRef = useRef(recordsScopeKey);
+  const recordsReadVersionRef = useRef(0);
+  const isRecordsReady = recordsScopeKey !== null && recordsSnapshot?.scopeKey === recordsScopeKey;
+  const records = isRecordsReady ? recordsSnapshot.records : [];
+  const recordsError = isRecordsReady ? recordsSnapshot.errorMessage : "";
+
+  useLayoutEffect(() => {
+    activeRecordsScopeRef.current = recordsScopeKey;
+    recordsReadVersionRef.current += 1;
+    return () => {
+      activeRecordsScopeRef.current = null;
+      recordsReadVersionRef.current += 1;
+    };
+  }, [recordsScopeKey]);
 
   const refreshRecords = useCallback(async () => {
-    setRecords(await repository.getRecent(RECENT_LIMIT));
-    setRecordsRevision((current) => current + 1);
+    const scopeKey = activeRecordsScopeRef.current;
+    if (scopeKey === null) return;
+    const readVersion = ++recordsReadVersionRef.current;
+    const isCurrentRead = () => readVersion === recordsReadVersionRef.current && scopeKey === activeRecordsScopeRef.current;
+    try {
+      const nextRecords = await repository.getRecent(RECENT_LIMIT);
+      if (!isCurrentRead()) return;
+      setRecordsSnapshot({ scopeKey, records: nextRecords, errorMessage: "" });
+      setRecordsRevision((current) => current + 1);
+    } catch (error) {
+      if (!isCurrentRead()) return;
+      setRecordsSnapshot((current) => ({
+        scopeKey,
+        records: current?.scopeKey === scopeKey ? current.records : [],
+        errorMessage: "读取记录失败，请刷新页面重试。",
+      }));
+      throw error;
+    }
   }, []);
 
   const { syncState, syncNow, guestMergeRequest, mergeGuestRecords, keepGuestRecords } = useRecordSync({
@@ -68,9 +105,17 @@ export function App() {
     onRecordsChanged: refreshRecords,
   });
 
+  // Scope initialization in useRecordSync is the only initial load. Reading here
+  // before auth restoration would query the guest partition instead of the user.
   useEffect(() => {
-    refreshRecords().catch(() => setNotice("读取记录失败，请刷新页面重试。"));
-  }, [refreshRecords]);
+    setEditing(null);
+    setPendingDelete(null);
+    setIsReviewOpen(false);
+  }, [recordsScopeKey]);
+
+  useEffect(() => {
+    if (isRecordsReady && !recordsError) inputRef.current?.focus();
+  }, [isRecordsReady, recordsError]);
 
   useEffect(() => {
     if (!notice) return;
@@ -81,7 +126,7 @@ export function App() {
   async function submitRecord(event?: FormEvent) {
     event?.preventDefault();
     const trimmed = content.trim();
-    if (!trimmed || isSaving) return;
+    if (!trimmed || isSaving || !isRecordsReady || recordsError) return;
 
     setIsSaving(true);
     try {
@@ -183,7 +228,7 @@ export function App() {
           <h1>Done List</h1>
         </div>
         <div className="header-actions">
-          <button className="review-button" type="button" onClick={() => setIsReviewOpen(true)}>
+          <button className="review-button" type="button" disabled={!isRecordsReady || !!recordsError} onClick={() => setIsReviewOpen(true)}>
             回顾
             <span aria-hidden="true">↗</span>
           </button>
@@ -242,22 +287,27 @@ export function App() {
             aria-label="记录内容"
             autoComplete="off"
             maxLength={500}
+            disabled={!isRecordsReady || !!recordsError}
             autoFocus
           />
-          <button type="submit" disabled={!content.trim() || isSaving} aria-label="保存记录">
+          <button type="submit" disabled={!content.trim() || isSaving || !isRecordsReady || !!recordsError} aria-label="保存记录">
             {isSaving ? "…" : "↵"}
           </button>
         </form>
         <p className="keyboard-hint">Enter 保存 · Shift + Enter 换行</p>
       </section>
 
-      <section className="recent-section" aria-labelledby="recent-title">
+      <section className="recent-section" aria-labelledby="recent-title" aria-busy={!isRecordsReady}>
         <div className="section-heading">
           <h2 id="recent-title">最近记录</h2>
-          <span>{records.length ? `最近 ${records.length} 条` : "0 条"}</span>
+          <span>{!isRecordsReady ? "读取中…" : recordsError && !records.length ? "读取失败" : records.length ? `最近 ${records.length} 条` : "0 条"}</span>
         </div>
 
-        {records.length === 0 ? (
+        {!isRecordsReady ? (
+          <div className="empty-state" role="status"><p>正在读取本地记录…</p></div>
+        ) : recordsError && records.length === 0 ? (
+          <div className="empty-state" role="alert"><p>{recordsError}</p></div>
+        ) : records.length === 0 ? (
           <div className="empty-state">
             <span aria-hidden="true">✓</span>
             <p>这里会出现你刚刚完成的事情。</p>
@@ -295,7 +345,7 @@ export function App() {
 
       {notice && <div className="toast" role="status">{notice}</div>}
 
-      {editing && (
+      {editing && isRecordsReady && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setEditing(null)}>
           <section
             className="modal-card"
@@ -332,7 +382,7 @@ export function App() {
         </div>
       )}
 
-      {pendingDelete && (
+      {pendingDelete && isRecordsReady && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setPendingDelete(null)}>
           <section
             className="modal-card delete-confirm"
@@ -353,7 +403,8 @@ export function App() {
       )}
 
       <ReviewSheet
-        open={isReviewOpen}
+        key={recordsScopeKey ?? "loading"}
+        open={isReviewOpen && isRecordsReady && !recordsError}
         repository={repository}
         refreshKey={recordsRevision}
         onClose={() => setIsReviewOpen(false)}

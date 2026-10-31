@@ -1,20 +1,18 @@
 import type { SyncState } from "../sync/useRecordSync";
 
 function formatSyncStatus(syncState: SyncState): string {
+  const pendingMessage = `${syncState.pendingChanges} 项待同步`;
   if (syncState.phase === "syncing") return "正在同步…";
   if (syncState.phase === "offline") {
     return syncState.pendingChanges
-      ? `当前离线，${syncState.pendingChanges} 项等待同步`
-      : "当前离线，将在联网后同步";
+      ? `当前无网络连接，${pendingMessage}`
+      : "当前无网络连接，将在联网后同步";
   }
   if (syncState.phase === "error") return "同步失败，点击下方按钮重试";
-  if (syncState.pendingChanges) return `${syncState.pendingChanges} 项等待同步`;
-  if (syncState.lastSyncedAt) {
-    return `已同步 · ${new Intl.DateTimeFormat("zh-CN", {
-      hour: "2-digit", minute: "2-digit", hour12: false,
-    }).format(syncState.lastSyncedAt)}`;
-  }
-  return "尚未进行首次同步";
+  if (syncState.pendingChanges || !syncState.lastSyncedAt) return pendingMessage;
+  return `已同步 · ${new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(syncState.lastSyncedAt)}`;
 }
 
 export function SyncStatus({ syncState }: { syncState: SyncState }) {

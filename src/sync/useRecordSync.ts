@@ -31,6 +31,8 @@ type UseRecordSyncOptions = {
   onRecordsChanged: () => void | Promise<void>;
 };
 
+const AUTO_SYNC_DELAY_MS = 1_000;
+
 const signedOutState: SyncState = {
   phase: "signed-out",
   lastSyncedAt: null,
@@ -85,7 +87,7 @@ export function useRecordSync({
         }));
         if (pendingChanges) {
           if (autoSyncTimerRef.current) window.clearTimeout(autoSyncTimerRef.current);
-          autoSyncTimerRef.current = window.setTimeout(() => void syncNow(), 650);
+          autoSyncTimerRef.current = window.setTimeout(() => void syncNow(), AUTO_SYNC_DELAY_MS);
         }
       } catch (error) {
         if (!isCurrentScope()) return;
@@ -222,7 +224,7 @@ export function useRecordSync({
         setSyncState((current) => ({ ...current, pendingChanges }));
         if (pendingChanges && readyScopeVersionRef.current === scopeVersion) {
           if (autoSyncTimerRef.current) window.clearTimeout(autoSyncTimerRef.current);
-          autoSyncTimerRef.current = window.setTimeout(() => void syncNow(), 650);
+          autoSyncTimerRef.current = window.setTimeout(() => void syncNow(), AUTO_SYNC_DELAY_MS);
         }
       },
       error(error) {
@@ -244,7 +246,7 @@ export function useRecordSync({
       phase: navigator.onLine ? current.phase : "offline",
     }));
     if (autoSyncTimerRef.current) window.clearTimeout(autoSyncTimerRef.current);
-    autoSyncTimerRef.current = window.setTimeout(() => void syncNow(), 650);
+    autoSyncTimerRef.current = window.setTimeout(() => void syncNow(), AUTO_SYNC_DELAY_MS);
   }), [repository, syncNow, userId]);
 
   useEffect(() => {

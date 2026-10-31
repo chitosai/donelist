@@ -188,7 +188,7 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
 
 .sync-status {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   margin: 2px 0 17px;
   border-radius: 11px;
@@ -199,7 +199,6 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   width: 8px;
   height: 8px;
   flex: 0 0 8px;
-  margin-top: 5px;
   border-radius: 50%;
   background: #6e917d;
 }
@@ -209,7 +208,7 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
 .sync-status.is-offline > span { background: #9b917d; }
 .sync-status.is-error { background: #fff0eb; }
 .sync-status.is-error > span { background: #bc5945; }
-.sync-status strong { font-size: 12px; font-weight: 650; }
+.sync-status strong { display: block; font-size: 12px; font-weight: 650; line-height: 1.5; }
 .sync-status p { margin: 4px 0 0; color: #9b4d3e; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
 
 .sync-back-button {

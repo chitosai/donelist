@@ -295,6 +295,32 @@ describe("useRecordSync: guest merge consent", () => {
     expect(syncMock).not.toHaveBeenCalled();
   });
 
+  it("waits one second after the latest local change before automatically syncing", async () => {
+    const store = createStore();
+    const subscribe = vi.spyOn(LocalRecordRepository.prototype, "subscribe");
+    const { result, unmount } = renderSync(store);
+    await waitFor(() => expect(result.current.syncState.lastSyncedAt).not.toBeNull());
+    const onLocalChange = subscribe.mock.calls[0][0];
+    expect(syncMock).toHaveBeenCalledTimes(1);
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      act(() => onLocalChange());
+      await act(async () => { await vi.advanceTimersByTimeAsync(650); });
+      expect(syncMock).toHaveBeenCalledTimes(1);
+
+      // Another edit resets the debounce window instead of starting a second sync.
+      act(() => onLocalChange());
+      await act(async () => { await vi.advanceTimersByTimeAsync(999); });
+      expect(syncMock).toHaveBeenCalledTimes(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(syncMock).toHaveBeenCalledTimes(2);
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
   it("automatically follows up when a newer mutation survives an in-flight upload", async () => {
     const store = createStore();
     store.setUserScope("user-a");

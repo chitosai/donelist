@@ -454,11 +454,11 @@ describe("SyncPanel: login, signout and sync state", () => {
   });
 
   it.each([
-    [{ phase: "idle", pendingChanges: 0 }, "尚未进行首次同步"],
-    [{ phase: "idle", pendingChanges: 3 }, "3 项等待同步"],
-    [{ phase: "idle", pendingChanges: 2, lastSyncedAt: new Date("2026-10-31T06:30:00Z") }, "2 项等待同步"],
-    [{ phase: "offline", pendingChanges: 0 }, "当前离线，将在联网后同步"],
-    [{ phase: "offline", pendingChanges: 3 }, "当前离线，3 项等待同步"],
+    [{ phase: "idle", pendingChanges: 0 }, "0 项待同步"],
+    [{ phase: "idle", pendingChanges: 3 }, "3 项待同步"],
+    [{ phase: "idle", pendingChanges: 2, lastSyncedAt: new Date("2026-10-31T06:30:00Z") }, "2 项待同步"],
+    [{ phase: "offline", pendingChanges: 0 }, "当前无网络连接，将在联网后同步"],
+    [{ phase: "offline", pendingChanges: 3 }, "当前无网络连接，3 项待同步"],
     [{ phase: "error", errorMessage: "permission denied" }, "同步失败，点击下方按钮重试"],
     [{ phase: "syncing" }, "正在同步…"],
   ] as const)("renders the %j sync state", async (state, text) => {

@@ -80,5 +80,40 @@ describe("IndexedDbRecordRepository", () => {
     await repository.delete(record.id);
 
     expect(await repository.getRecent(10)).toEqual([]);
+    expect((await repository.getAllForSync())[0].deletedAt).not.toBeNull();
+  });
+
+  it("claims guest records for a signed-in user and keeps scopes separate", async () => {
+    const repository = createRepository();
+    await repository.create({ content: "登录前记录", happenedAt: new Date().toISOString() });
+
+    expect(await repository.claimGuestRecords("user-a")).toBe(1);
+    repository.setUserScope("user-a");
+    expect((await repository.getRecent(10)).map((record) => record.content)).toEqual(["登录前记录"]);
+
+    repository.setGuestScope();
+    expect(await repository.getRecent(10)).toEqual([]);
+  });
+
+  it("keeps the newest version while merging cloud records", async () => {
+    const repository = createRepository();
+    repository.setUserScope("user-a");
+    const local = await repository.create({ content: "本地新版", happenedAt: new Date().toISOString() });
+
+    await repository.mergeFromSync([{
+      ...local,
+      content: "云端旧版",
+      updatedAt: new Date(Date.now() - 60_000).toISOString(),
+      deletedAt: null,
+    }]);
+    expect((await repository.getRecent(10))[0].content).toBe("本地新版");
+
+    await repository.mergeFromSync([{
+      ...local,
+      content: "云端新版",
+      updatedAt: new Date(Date.now() + 60_000).toISOString(),
+      deletedAt: null,
+    }]);
+    expect((await repository.getRecent(10))[0].content).toBe("云端新版");
   });
 });

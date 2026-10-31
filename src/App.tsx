@@ -1,20 +1,17 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { AutoGrowTextarea } from "./components/AutoGrowTextarea";
+import { SyncPanel } from "./components/SyncPanel";
 import { IndexedDbRecordRepository } from "./data/IndexedDbRecordRepository";
+import { LocalRecordRepository } from "./data/LocalRecordRepository";
 import type { DoneRecord, RecordBackup } from "./domain/DoneRecord";
 import { formatRecordTime, fromDateTimeLocalValue, toDateTimeLocalValue } from "./utils/time";
 import { ReviewSheet } from "./components/ReviewSheet";
+import { useAuth } from "./auth/AuthProvider";
+import { useRecordSync } from "./sync/useRecordSync";
 
-const repository = new IndexedDbRecordRepository();
+const localStore = new IndexedDbRecordRepository();
+const repository = new LocalRecordRepository(localStore);
 const RECENT_LIMIT = 10;
-
-function DownloadIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14" />
-    </svg>
-  );
-}
 
 function EditIcon() {
   return (
@@ -41,6 +38,7 @@ function ChevronIcon() {
 }
 
 export function App() {
+  const { user, isAuthReady } = useAuth();
   const [content, setContent] = useState("");
   const [isBackfillOpen, setIsBackfillOpen] = useState(false);
   const [customTime, setCustomTime] = useState(() => toDateTimeLocalValue(new Date()));
@@ -52,12 +50,22 @@ export function App() {
   const [notice, setNotice] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
+  const [recordsRevision, setRecordsRevision] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
   const refreshRecords = useCallback(async () => {
     setRecords(await repository.getRecent(RECENT_LIMIT));
+    setRecordsRevision((current) => current + 1);
   }, []);
+
+  const { syncState, syncNow } = useRecordSync({
+    user,
+    isAuthReady,
+    repository,
+    localStore,
+    onRecordsChanged: refreshRecords,
+  });
 
   useEffect(() => {
     refreshRecords().catch(() => setNotice("读取记录失败，请刷新页面重试。"));
@@ -173,10 +181,18 @@ export function App() {
           <p className="eyebrow">YOUR MONTH, REMEMBERED</p>
           <h1>Done List</h1>
         </div>
-        <button className="review-button" type="button" onClick={() => setIsReviewOpen(true)}>
-          回顾
-          <span aria-hidden="true">↗</span>
-        </button>
+        <div className="header-actions">
+          <button className="review-button" type="button" onClick={() => setIsReviewOpen(true)}>
+            回顾
+            <span aria-hidden="true">↗</span>
+          </button>
+          <SyncPanel
+            syncState={syncState}
+            onSync={syncNow}
+            onExport={exportBackup}
+            onImport={() => importRef.current?.click()}
+          />
+        </div>
       </header>
 
       <section className={`composer ${isBackfillOpen ? "is-backfill" : ""}`} aria-label="添加记录">
@@ -265,25 +281,16 @@ export function App() {
         )}
       </section>
 
-      <details className="data-tools">
-        <summary>数据工具</summary>
-        <div>
-          <button type="button" onClick={() => void exportBackup()}>
-            <DownloadIcon /> 导出备份
-          </button>
-          <button type="button" onClick={() => importRef.current?.click()}>导入备份</button>
-          <input
-            ref={importRef}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void importBackup(file);
-            }}
-          />
-        </div>
-      </details>
+      <input
+        ref={importRef}
+        type="file"
+        accept="application/json,.json"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) void importBackup(file);
+        }}
+      />
 
       {notice && <div className="toast" role="status">{notice}</div>}
 
@@ -347,6 +354,7 @@ export function App() {
       <ReviewSheet
         open={isReviewOpen}
         repository={repository}
+        refreshKey={recordsRevision}
         onClose={() => setIsReviewOpen(false)}
         onRecordsChanged={refreshRecords}
       />

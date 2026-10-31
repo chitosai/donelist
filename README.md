@@ -19,10 +19,12 @@
 
 ```bash
 pnpm install
-pnpm dev
+pnpm dev --host 127.0.0.1 --port 5173 --strictPort
 ```
 
-浏览器访问终端显示的本地地址。
+浏览器访问 `http://127.0.0.1:5173/`。不要改用 `localhost`，IndexedDB 数据与完整来源地址绑定。
+
+将 `.env.example` 复制为 `.env.local`，然后填写 Supabase 项目的 URL 和 Publishable Key。Publishable Key 可以在前端使用；不要把 Secret Key 写入本项目。
 
 ## 验证与构建
 
@@ -34,6 +36,10 @@ pnpm preview
 
 ## 数据结构
 
-每条记录包含稳定 UUID，以及 `happenedAt`、`createdAt`、`updatedAt` 三个 ISO 时间字段。页面通过 `RecordRepository` 接口访问数据；未来增加服务器时，可以新增 `ApiRecordRepository` 而无需重写界面。
+每条记录包含稳定 UUID，以及 `happenedAt`、`createdAt`、`updatedAt` 三个 ISO 时间字段。页面通过 `RecordRepository` 接口访问数据，IndexedDB 始终负责本地即时读写。
 
-**注意：本服务使用 IndexedDB 储存数据，数据仅保存在当前浏览器内，如需跨浏览器访问数据请使用页面底部“数据工具”中的导出和导入功能。**
+未登录时，数据只保存在当前浏览器中；顶部同步按钮提供登录、注册、导出与导入功能。登录后，本地数据会自动合并到当前账户并与 Supabase 同步。
+
+## Supabase 数据库
+
+在 Supabase Dashboard 打开 SQL Editor，执行 [`supabase/schema.sql`](supabase/schema.sql)。该脚本会创建 `done_records` 表、索引和 Row Level Security 策略，确保登录用户只能访问自己的记录。

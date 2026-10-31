@@ -45,6 +45,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
   margin-bottom: 38px;
 }
 
+.header-actions { display: flex; align-items: center; gap: 9px; }
+
 .eyebrow {
   margin: 0 0 6px;
   color: var(--orange);
@@ -70,6 +72,189 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
 }
 
 .review-button:hover { background: var(--green); color: white; transform: translateY(-1px); }
+
+.sync-menu { position: relative; }
+.sync-menu-button {
+  position: relative;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition: background .18s, color .18s, transform .18s;
+}
+.sync-menu-button:hover,
+.sync-menu-button[aria-expanded="true"] { background: var(--green); color: white; transform: translateY(-1px); }
+.sync-menu-button svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sync-menu-button.is-syncing svg { animation: sync-icon-spin 1s linear infinite; }
+@keyframes sync-icon-spin { to { transform: rotate(360deg); } }
+.sync-attention-dot {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid #f4f1e8;
+  border-radius: 50%;
+  background: var(--orange);
+}
+
+.sync-popover {
+  position: absolute;
+  z-index: 25;
+  top: calc(100% + 12px);
+  right: 0;
+  width: min(360px, calc(100vw - 28px));
+  border: 1px solid rgba(24, 49, 43, .12);
+  border-radius: 19px;
+  background: rgba(255, 253, 247, .98);
+  box-shadow: 0 24px 75px rgba(27, 43, 37, .18);
+  padding: 20px;
+  transform-origin: top right;
+  animation: sync-popover-in .18s cubic-bezier(.2, .82, .2, 1);
+}
+@keyframes sync-popover-in {
+  from { opacity: 0; transform: translateY(-5px) scale(.98); }
+}
+.sync-popover-heading { display: grid; gap: 3px; margin-bottom: 14px; }
+.sync-popover-heading span {
+  color: var(--orange);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.sync-popover-heading strong {
+  overflow: hidden;
+  font-size: 19px;
+  letter-spacing: -.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sync-description,
+.sync-data-note {
+  color: #53645b;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.sync-description {
+  margin: 0;
+}
+.sync-description + .sync-primary-actions { margin-top: 17px; }
+.sync-primary-actions,
+.sync-data-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sync-primary-actions button,
+.sync-data-actions button,
+.sync-auth-form > button {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.sync-primary-actions button:hover,
+.sync-data-actions button:hover { border-color: #aeb8b1; background: #f2f1ea; }
+.sync-primary-actions .sync-main-action,
+.sync-auth-form > .sync-main-action {
+  border-color: var(--green);
+  background: var(--green);
+  color: white;
+}
+.sync-primary-actions .sync-main-action:hover,
+.sync-auth-form > .sync-main-action:hover { background: #0e342b; }
+.sync-primary-actions button:disabled,
+.sync-auth-form > button:disabled { cursor: default; opacity: .48; }
+.sync-data-note {
+  margin: 17px 0 9px;
+  border-top: 1px solid var(--line);
+  padding-top: 13px;
+}
+.sync-data-actions button { color: #59675f; }
+.sync-loading { padding: 16px 4px; color: var(--muted); font-size: 13px; text-align: center; }
+
+.sync-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 2px 0 17px;
+  border-radius: 11px;
+  background: #eef3ee;
+  padding: 11px 12px;
+}
+.sync-status > span {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #6e917d;
+}
+.sync-status.is-syncing > span { animation: sync-status-pulse .8s ease-in-out infinite alternate; }
+@keyframes sync-status-pulse { to { opacity: .25; transform: scale(.72); } }
+.sync-status.is-offline { background: #f3f0e8; }
+.sync-status.is-offline > span { background: #9b917d; }
+.sync-status.is-error { background: #fff0eb; }
+.sync-status.is-error > span { background: #bc5945; }
+.sync-status strong { font-size: 12px; font-weight: 650; }
+.sync-status p { margin: 4px 0 0; color: #9b4d3e; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+
+.sync-back-button {
+  margin: -3px 0 12px;
+  border: 0;
+  background: transparent;
+  padding: 2px 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.sync-back-button:hover { color: var(--ink); }
+.auth-heading { margin-bottom: 16px; }
+.sync-auth-form { display: grid; }
+.sync-auth-form label { margin-bottom: 5px; color: var(--muted); font-size: 11px; }
+.sync-auth-form input {
+  width: 100%;
+  margin-bottom: 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f6f4ed;
+  padding: 11px 12px;
+  color: var(--ink);
+  font-size: 13px;
+}
+.sync-password-hint { margin: -7px 2px 13px; color: #9aa19b; font-size: 10px; }
+.sync-auth-form input[aria-invalid="true"] { border-color: #bc5945; }
+.sync-field-error { margin: -6px 2px 13px; color: #a34738; font-size: 11px; line-height: 1.5; }
+.sync-form-message {
+  margin: 0 0 12px;
+  border-radius: 9px;
+  background: #f6eee7;
+  padding: 8px 10px;
+  color: #89543a;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.sync-form-message.is-success {
+  margin: 0;
+  background: #e7f2e9;
+  color: #285d42;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.sync-auth-form > button { width: 100%; }
 
 .composer {
   position: relative;
@@ -684,6 +869,9 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
 @media (max-width: 600px) {
   .app-shell { width: min(100% - 28px, 760px); padding-top: 30px; }
   .app-header { margin-bottom: 28px; }
+  .header-actions { gap: 6px; }
+  .review-button { padding-inline: 13px; }
+  .sync-popover { position: fixed; top: 88px; right: 14px; left: 14px; width: auto; }
   .record-item { grid-template-columns: 80px 1fr auto; gap: 10px; }
   .record-actions { opacity: 1; }
   .record-actions button { width: 29px; }

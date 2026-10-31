@@ -64,6 +64,17 @@ function restoreAccount(userId = "user-a") {
 }
 
 describe("App: local records before background sync", () => {
+  it("uses a decorative calendar icon while preserving the Review button's accessible name", async () => {
+    fixture.auth.isAuthReady = true;
+    render(<App />);
+    const review = screen.getByRole("button", { name: /^回顾$/ }) as HTMLButtonElement;
+    await waitFor(() => expect(review.disabled).toBe(false));
+    expect(review.textContent?.trim()).toBe("回顾");
+    expect(review.querySelector(".review-button-label")?.textContent).toBe("回顾");
+    expect(review.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    expect(review.querySelector("svg")?.getAttribute("focusable")).toBe("false");
+  });
+
   it("waits for identity without querying guests or showing a false empty state, then displays cache while syncing", async () => {
     const localRecord = await seedAccount();
     const cloud = deferred<void>();

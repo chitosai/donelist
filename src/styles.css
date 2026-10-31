@@ -59,19 +59,33 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
 
 .review-button {
   display: flex;
-  gap: 10px;
+  height: 42px;
+  gap: 8px;
   align-items: center;
   border: 1px solid var(--ink);
   border-radius: 999px;
   background: transparent;
-  padding: 10px 17px;
+  padding: 8px 17px 8px 18px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 17px;
+  line-height: 20px;
   font-weight: 600;
   transition: background .18s, color .18s, transform .18s;
 }
 
 .review-button:hover { background: var(--green); color: white; transform: translateY(-1px); }
+/* Match the visible glyph bounds to the calendar, not just the font line box. */
+.review-button-label { transform: translateY(-1.5px); }
+.review-button svg {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
 .sync-menu { position: relative; }
 .sync-menu-button {
@@ -89,11 +103,11 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
 .sync-menu-button:hover,
 .sync-menu-button[aria-expanded="true"] { background: var(--green); color: white; transform: translateY(-1px); }
 .sync-menu-button svg {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.75;
+  stroke-width: 2.6;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -885,7 +899,7 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   .app-shell { width: min(100% - 28px, 760px); padding-top: 30px; }
   .app-header { margin-bottom: 28px; }
   .header-actions { gap: 6px; }
-  .review-button { padding-inline: 13px; }
+  .review-button { padding-inline: 14px 13px; }
   .sync-popover { position: fixed; top: 88px; right: 14px; left: 14px; width: auto; }
   .record-item { grid-template-columns: 80px 1fr auto; gap: 10px; }
   .record-actions { opacity: 1; }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { AutoGrowTextarea } from "./components/AutoGrowTextarea";
+import { CalendarIcon } from "./components/CalendarIcon";
 import { SyncPanel } from "./components/SyncPanel";
 import { GuestRecordsMergeDialog } from "./components/GuestRecordsMergeDialog";
 import { IndexedDbRecordRepository } from "./data/IndexedDbRecordRepository";
@@ -229,8 +230,8 @@ export function App() {
         </div>
         <div className="header-actions">
           <button className="review-button" type="button" disabled={!isRecordsReady || !!recordsError} onClick={() => setIsReviewOpen(true)}>
-            回顾
-            <span aria-hidden="true">↗</span>
+            <span className="review-button-label">回顾</span>
+            <CalendarIcon />
           </button>
           <SyncPanel
             syncState={syncState}

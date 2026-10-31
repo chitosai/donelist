@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { SyncState } from "../sync/useRecordSync";
 import { useAuth } from "../auth/AuthProvider";
 import { SyncStatus } from "./SyncStatus";
+import { SyncIcon } from "./SyncIcon";
 
 type PanelView = "summary" | "login" | "register" | "confirmation";
 
@@ -11,17 +12,6 @@ type SyncPanelProps = {
   onExport: () => void | Promise<void>;
   onImport: () => void;
 };
-
-function SyncIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M20.5 7.5A9 9 0 0 0 5.7 5.7L3.5 8" />
-      <path d="M3.5 3.5V8H8" />
-      <path d="M3.5 16.5a9 9 0 0 0 14.8 1.8l2.2-2.3" />
-      <path d="M20.5 20.5V16H16" />
-    </svg>
-  );
-}
 
 function friendlyAuthError(error: unknown): string {
   const message = error instanceof Error ? error.message : "操作失败，请稍后重试。";

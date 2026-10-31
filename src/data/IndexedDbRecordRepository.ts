@@ -1,4 +1,4 @@
-import Dexie, { type EntityTable } from "dexie";
+import Dexie, { type EntityTable, type Table } from "dexie";
 import type { DoneRecord, NewDoneRecord, RecordBackup } from "../domain/DoneRecord";
 import type { RecordRepository } from "./RecordRepository";
 
@@ -12,8 +12,20 @@ type StoredDoneRecord = SyncableDoneRecord & {
   scopeId: string;
 };
 
+export type PendingRecordUpload = {
+  syncTarget: string;
+  scopeId: string;
+  recordId: string;
+  mutationId: string;
+  record: SyncableDoneRecord;
+};
+
+type UploadScope = { syncTarget: string; scopeId: string; initializedAt: string };
+
 class DoneListDatabase extends Dexie {
   records!: EntityTable<StoredDoneRecord, "id">;
+  pendingUploads!: Table<PendingRecordUpload, [string, string, string]>;
+  uploadScopes!: Table<UploadScope, [string, string]>;
 
   constructor(databaseName: string) {
     super(databaseName);
@@ -26,6 +38,12 @@ class DoneListDatabase extends Dexie {
       record.scopeId = record.scopeId ?? GUEST_SCOPE_ID;
       record.deletedAt = record.deletedAt ?? null;
     }));
+    // Existing records stay untouched. Account queues are initialized lazily.
+    this.version(3).stores({
+      records: "&id, scopeId, happenedAt, createdAt, updatedAt, [scopeId+happenedAt]",
+      pendingUploads: "[syncTarget+scopeId+recordId], [syncTarget+scopeId]",
+      uploadScopes: "[syncTarget+scopeId]",
+    });
   }
 }
 
@@ -38,7 +56,7 @@ export class IndexedDbRecordRepository implements RecordRepository {
   readonly db: DoneListDatabase;
   private scopeId = GUEST_SCOPE_ID;
 
-  constructor(databaseName = "done-list") {
+  constructor(databaseName = "done-list", private readonly syncTarget = "local") {
     this.db = new DoneListDatabase(databaseName);
   }
 
@@ -50,6 +68,52 @@ export class IndexedDbRecordRepository implements RecordRepository {
     this.scopeId = `user:${userId}`;
   }
 
+  private async enqueueUpload(record: StoredDoneRecord): Promise<void> {
+    if (record.scopeId === GUEST_SCOPE_ID) return;
+    await this.db.pendingUploads.put({
+      syncTarget: this.syncTarget,
+      scopeId: record.scopeId,
+      recordId: record.id,
+      mutationId: createId(),
+      record: toSyncableDoneRecord(record),
+    });
+  }
+
+  async prepareUploadQueue(userId: string): Promise<void> {
+    const scopeId = `user:${userId}`;
+    await this.db.transaction("rw", this.db.records, this.db.pendingUploads, this.db.uploadScopes, async () => {
+      const key: [string, string] = [this.syncTarget, scopeId];
+      if (await this.db.uploadScopes.get(key)) return;
+      const records = await this.db.records.where("scopeId").equals(scopeId).toArray();
+      for (const record of records) {
+        if (!await this.db.pendingUploads.get([this.syncTarget, scopeId, record.id])) {
+          await this.enqueueUpload(record);
+        }
+      }
+      await this.db.uploadScopes.put({ syncTarget: this.syncTarget, scopeId, initializedAt: new Date().toISOString() });
+    });
+  }
+
+  getPendingUploads(userId: string): Promise<PendingRecordUpload[]> {
+    return this.db.pendingUploads.where("[syncTarget+scopeId]").equals([this.syncTarget, `user:${userId}`]).toArray();
+  }
+
+  getPendingUploadCount(userId: string): Promise<number> {
+    return this.db.pendingUploads.where("[syncTarget+scopeId]").equals([this.syncTarget, `user:${userId}`]).count();
+  }
+
+  async acknowledgeUploads(userId: string, uploads: PendingRecordUpload[]): Promise<void> {
+    const scopeId = `user:${userId}`;
+    await this.db.transaction("rw", this.db.pendingUploads, async () => {
+      for (const upload of uploads) {
+        if (upload.syncTarget !== this.syncTarget || upload.scopeId !== scopeId) continue;
+        const key: [string, string, string] = [this.syncTarget, scopeId, upload.recordId];
+        const current = await this.db.pendingUploads.get(key);
+        if (current?.mutationId === upload.mutationId) await this.db.pendingUploads.delete(key);
+      }
+    });
+  }
+
   async getGuestRecords(): Promise<DoneRecord[]> {
     const records = await this.db.records.where("scopeId").equals(GUEST_SCOPE_ID).toArray();
     return records.filter((record) => !record.deletedAt).map(toDoneRecord);
@@ -57,7 +121,7 @@ export class IndexedDbRecordRepository implements RecordRepository {
 
   async claimGuestRecords(userId: string, recordIds: string[]): Promise<number> {
     const userScopeId = `user:${userId}`;
-    return this.db.transaction("rw", this.db.records, async () => {
+    return this.db.transaction("rw", this.db.records, this.db.pendingUploads, async () => {
       const records = await this.db.records.bulkGet([...new Set(recordIds)]);
       const guestRecords = records.filter((record): record is StoredDoneRecord =>
         !!record && record.scopeId === GUEST_SCOPE_ID && !record.deletedAt,
@@ -66,6 +130,7 @@ export class IndexedDbRecordRepository implements RecordRepository {
         await this.db.records.bulkPut(
           guestRecords.map((record) => ({ ...record, scopeId: userScopeId })),
         );
+        for (const record of guestRecords) await this.enqueueUpload({ ...record, scopeId: userScopeId });
       }
       return guestRecords.length;
     });
@@ -84,30 +149,40 @@ export class IndexedDbRecordRepository implements RecordRepository {
       scopeId: this.scopeId,
     };
 
-    await this.db.records.add(record);
+    await this.db.transaction("rw", this.db.records, this.db.pendingUploads, async () => {
+      await this.db.records.add(record);
+      await this.enqueueUpload(record);
+    });
     return toDoneRecord(record);
   }
 
   async update(record: DoneRecord): Promise<void> {
-    const existing = await this.db.records.get(record.id);
-    if (!existing || existing.scopeId !== this.scopeId) {
-      throw new Error("找不到要修改的记录。");
-    }
-
-    await this.db.records.put({
-      ...record,
-      scopeId: this.scopeId,
-      deletedAt: existing.deletedAt,
-      content: record.content.trim(),
-      updatedAt: new Date().toISOString(),
+    const scopeId = this.scopeId;
+    await this.db.transaction("rw", this.db.records, this.db.pendingUploads, async () => {
+      const existing = await this.db.records.get(record.id);
+      if (!existing || existing.scopeId !== scopeId) throw new Error("找不到要修改的记录。");
+      const nextRecord: StoredDoneRecord = {
+        ...record,
+        scopeId,
+        deletedAt: existing.deletedAt,
+        content: record.content.trim(),
+        updatedAt: new Date().toISOString(),
+      };
+      await this.db.records.put(nextRecord);
+      await this.enqueueUpload(nextRecord);
     });
   }
 
   async delete(id: string): Promise<void> {
-    const record = await this.db.records.get(id);
-    if (!record || record.scopeId !== this.scopeId) return;
-    const now = new Date().toISOString();
-    await this.db.records.put({ ...record, deletedAt: now, updatedAt: now });
+    const scopeId = this.scopeId;
+    await this.db.transaction("rw", this.db.records, this.db.pendingUploads, async () => {
+      const record = await this.db.records.get(id);
+      if (!record || record.scopeId !== scopeId) return;
+      const now = new Date().toISOString();
+      const nextRecord = { ...record, deletedAt: now, updatedAt: now };
+      await this.db.records.put(nextRecord);
+      await this.enqueueUpload(nextRecord);
+    });
   }
 
   async getRecent(limit: number): Promise<DoneRecord[]> {
@@ -162,11 +237,20 @@ export class IndexedDbRecordRepository implements RecordRepository {
         typeof record.isHighlighted === "boolean",
     );
 
-    await this.db.records.bulkPut(records.map((record) => ({
+    const scopeId = this.scopeId;
+    const storedRecords = records.map((record) => ({
       ...record,
-      scopeId: this.scopeId,
+      scopeId,
       deletedAt: null,
-    })));
+    }));
+    await this.db.transaction("rw", this.db.records, this.db.pendingUploads, async () => {
+      const existing = await this.db.records.bulkGet(storedRecords.map((record) => record.id));
+      if (existing.some((record) => record && record.scopeId !== scopeId)) {
+        throw new Error("备份中的记录与其他本地分区的记录编号冲突，未导入任何记录。");
+      }
+      await this.db.records.bulkPut(storedRecords);
+      for (const record of storedRecords) await this.enqueueUpload(record);
+    });
     return records.length;
   }
 
@@ -176,26 +260,33 @@ export class IndexedDbRecordRepository implements RecordRepository {
     return records.map(toSyncableDoneRecord);
   }
 
-  async mergeFromSync(records: SyncableDoneRecord[], userId?: string): Promise<void> {
+  async mergeFromSync(records: SyncableDoneRecord[], userId?: string, pendingAtReadStart?: PendingRecordUpload[]): Promise<void> {
     if (!records.length) return;
     const scopeId = userId ? `user:${userId}` : this.scopeId;
 
-    await this.db.transaction("rw", this.db.records, async () => {
+    const observedMutations = pendingAtReadStart && new Map(pendingAtReadStart.map((upload) => [upload.recordId, upload.mutationId]));
+    await this.db.transaction("rw", this.db.records, this.db.pendingUploads, async () => {
       const existingRecords = await this.db.records.bulkGet(records.map((record) => record.id));
-      const recordsToWrite = records.flatMap((record, index) => {
+      for (const [index, record] of records.entries()) {
         const existing = existingRecords[index];
         if (existing && existing.scopeId !== scopeId) {
           throw new Error("同步记录与其他本地分区的记录编号冲突，已停止同步以保留本地数据。");
         }
-        if (
-          existing &&
-          existing.updatedAt.localeCompare(record.updatedAt) > 0
-        ) {
-          return [];
+        const key: [string, string, string] = [this.syncTarget, scopeId, record.id];
+        const pending = await this.db.pendingUploads.get(key);
+        // An edit made while the remote read was in flight must survive that read.
+        if (pending && observedMutations && observedMutations.get(record.id) !== pending.mutationId) continue;
+        if (existing) {
+          const timestampDifference = Date.parse(existing.updatedAt) - Date.parse(record.updatedAt);
+          if (timestampDifference > 0) continue;
+          // Distinct edits can share a millisecond; an old payload is not an ACK.
+          if (pending && timestampDifference === 0 && !isSameSyncRecord(existing, record)) continue;
         }
-        return [{ ...record, scopeId }];
-      });
-      if (recordsToWrite.length) await this.db.records.bulkPut(recordsToWrite);
+        await this.db.records.put({ ...record, scopeId });
+        // The existing timestamp policy chose the cloud version (or it already
+        // contains this mutation). Do not upload that unchanged cloud row again.
+        if (pending) await this.db.pendingUploads.delete(key);
+      }
     });
   }
 }
@@ -213,4 +304,12 @@ function toDoneRecord(record: StoredDoneRecord): DoneRecord {
 
 function toSyncableDoneRecord(record: StoredDoneRecord): SyncableDoneRecord {
   return { ...toDoneRecord(record), deletedAt: record.deletedAt };
+}
+
+function isSameSyncRecord(left: SyncableDoneRecord, right: SyncableDoneRecord): boolean {
+  return left.id === right.id && left.content === right.content && left.isHighlighted === right.isHighlighted &&
+    Date.parse(left.happenedAt) === Date.parse(right.happenedAt) &&
+    Date.parse(left.createdAt) === Date.parse(right.createdAt) &&
+    Date.parse(left.updatedAt) === Date.parse(right.updatedAt) &&
+    (left.deletedAt === right.deletedAt || (!!left.deletedAt && !!right.deletedAt && Date.parse(left.deletedAt) === Date.parse(right.deletedAt)));
 }

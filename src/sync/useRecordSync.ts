@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { liveQuery } from "dexie";
 import type { User } from "@supabase/supabase-js";
 import type { IndexedDbRecordRepository } from "../data/IndexedDbRecordRepository";
 import type { LocalRecordRepository } from "../data/LocalRecordRepository";
@@ -73,12 +74,19 @@ export function useRecordSync({
         if (!isCurrentScope()) return;
         await onRecordsChanged();
         if (!isCurrentScope()) return;
-        setSyncState({
+        const pendingChanges = await localStore.getPendingUploadCount(userId);
+        if (!isCurrentScope()) return;
+        setSyncState((current) => ({
+          ...current,
           phase: "idle",
           lastSyncedAt: new Date(),
-          pendingChanges: 0,
+          pendingChanges,
           errorMessage: "",
-        });
+        }));
+        if (pendingChanges) {
+          if (autoSyncTimerRef.current) window.clearTimeout(autoSyncTimerRef.current);
+          autoSyncTimerRef.current = window.setTimeout(() => void syncNow(), 650);
+        }
       } catch (error) {
         if (!isCurrentScope()) return;
         setSyncState((current) => ({
@@ -95,7 +103,7 @@ export function useRecordSync({
     } finally {
       if (syncPromiseRef.current?.promise === promise) syncPromiseRef.current = null;
     }
-  }, [onRecordsChanged, userId]);
+  }, [localStore, onRecordsChanged, userId]);
 
   useEffect(() => {
     if (!isAuthReady) return;
@@ -118,6 +126,11 @@ export function useRecordSync({
         ...signedOutState,
         phase: navigator.onLine ? "idle" : "offline",
       });
+      await localStore.prepareUploadQueue(userId);
+      if (!isCurrentScope()) return;
+      const pendingChanges = await localStore.getPendingUploadCount(userId);
+      if (!isCurrentScope()) return;
+      setSyncState((current) => ({ ...current, pendingChanges }));
       await onRecordsChanged();
       const guestRecords = await localStore.getGuestRecords();
       if (!isCurrentScope()) return;
@@ -167,9 +180,8 @@ export function useRecordSync({
     if (mergingScopeVersionRef.current === scopeVersion) return;
     mergingScopeVersionRef.current = scopeVersion;
     setGuestMergeRequest((current) => current ? { ...current, isMerging: true, errorMessage: "" } : null);
-    let claimedCount: number;
     try {
-      claimedCount = await localStore.claimGuestRecords(guestMergeRequest.userId, guestMergeRequest.recordIds);
+      await localStore.claimGuestRecords(guestMergeRequest.userId, guestMergeRequest.recordIds);
     } catch (error) {
       if (scopeVersionRef.current === scopeVersion) {
         setGuestMergeRequest((current) => current ? {
@@ -185,8 +197,10 @@ export function useRecordSync({
     if (scopeVersionRef.current !== scopeVersion) return;
     setGuestMergeRequest(null);
     readyScopeVersionRef.current = scopeVersion;
-    setSyncState((current) => ({ ...current, pendingChanges: current.pendingChanges + claimedCount }));
     try {
+      const pendingChanges = await localStore.getPendingUploadCount(guestMergeRequest.userId);
+      if (scopeVersionRef.current !== scopeVersion) return;
+      setSyncState((current) => ({ ...current, pendingChanges }));
       await onRecordsChanged();
       if (scopeVersionRef.current === scopeVersion) await syncNow();
     } catch (error) {
@@ -199,12 +213,35 @@ export function useRecordSync({
     }
   }, [guestMergeRequest, localStore, onRecordsChanged, syncNow]);
 
+  useEffect(() => {
+    if (!isAuthReady || !userId) return;
+    const scopeVersion = scopeVersionRef.current;
+    const subscription = liveQuery(() => localStore.getPendingUploadCount(userId)).subscribe({
+      next(pendingChanges) {
+        if (scopeVersionRef.current !== scopeVersion || activeUserIdRef.current !== userId) return;
+        setSyncState((current) => ({ ...current, pendingChanges }));
+        if (pendingChanges && readyScopeVersionRef.current === scopeVersion) {
+          if (autoSyncTimerRef.current) window.clearTimeout(autoSyncTimerRef.current);
+          autoSyncTimerRef.current = window.setTimeout(() => void syncNow(), 650);
+        }
+      },
+      error(error) {
+        if (scopeVersionRef.current !== scopeVersion) return;
+        setSyncState((current) => ({
+          ...current,
+          phase: "error",
+          errorMessage: error instanceof Error ? error.message : "读取待上传记录失败，请刷新页面重试。",
+        }));
+      },
+    });
+    return () => subscription.unsubscribe();
+  }, [isAuthReady, localStore, syncNow, userId]);
+
   useEffect(() => repository.subscribe(() => {
     if (!userId) return;
     setSyncState((current) => ({
       ...current,
       phase: navigator.onLine ? current.phase : "offline",
-      pendingChanges: current.pendingChanges + 1,
     }));
     if (autoSyncTimerRef.current) window.clearTimeout(autoSyncTimerRef.current);
     autoSyncTimerRef.current = window.setTimeout(() => void syncNow(), 650);

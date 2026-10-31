@@ -278,4 +278,54 @@ describe("useRecordSync: guest merge consent", () => {
     expect(claimGuestRecords).not.toHaveBeenCalled();
     expect(syncMock).not.toHaveBeenCalled();
   });
+
+  it("restores the distinct pending-record count while offline after remounting", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    const store = createStore();
+    store.setUserScope("user-a");
+    const record = await addRecord(store);
+    await addRecord(store, "第二条");
+    await store.update({ ...record, content: "反复编辑仍只有一项" });
+    const first = renderSync(store);
+    await waitFor(() => expect(first.result.current.syncState.pendingChanges).toBe(2));
+    first.unmount();
+    const reopened = renderSync(store);
+    await waitFor(() => expect(reopened.result.current.syncState.pendingChanges).toBe(2));
+    expect(reopened.result.current.syncState.phase).toBe("offline");
+    expect(syncMock).not.toHaveBeenCalled();
+  });
+
+  it("automatically follows up when a newer mutation survives an in-flight upload", async () => {
+    const store = createStore();
+    store.setUserScope("user-a");
+    const record = await addRecord(store);
+    syncMock.mockImplementationOnce(async () => {
+      const batch = await store.getPendingUploads("user-a");
+      await store.update({ ...record, content: "上传期间的新版本" });
+      await store.acknowledgeUploads("user-a", batch);
+    }).mockImplementationOnce(async () => {
+      await store.acknowledgeUploads("user-a", await store.getPendingUploads("user-a"));
+    });
+    const { result } = renderSync(store);
+    await waitFor(() => expect(syncMock).toHaveBeenCalledTimes(2), { timeout: 2500 });
+    await waitFor(() => expect(result.current.syncState.pendingChanges).toBe(0));
+    expect((await store.getAllForSync("user-a"))[0].content).toBe("上传期间的新版本");
+  });
+
+  it("keeps another account's queue after logout without displaying its pending count", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    const store = createStore();
+    store.setUserScope("user-a");
+    await addRecord(store);
+    const { result, rerender } = renderSync(store);
+    await waitFor(() => expect(result.current.syncState.pendingChanges).toBe(1));
+    rerender({ user: null, isAuthReady: true });
+    await waitFor(() => expect(result.current.syncState.phase).toBe("signed-out"));
+    expect(result.current.syncState.pendingChanges).toBe(0);
+    expect(await store.getPendingUploadCount("user-a")).toBe(1);
+    rerender({ user: createUser("user-b"), isAuthReady: true });
+    await waitFor(() => expect(result.current.syncState.phase).toBe("offline"));
+    expect(result.current.syncState.pendingChanges).toBe(0);
+    expect(await store.getPendingUploadCount("user-a")).toBe(1);
+  });
 });

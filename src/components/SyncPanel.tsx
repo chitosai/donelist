@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { SyncState } from "../sync/useRecordSync";
 import { useAuth } from "../auth/AuthProvider";
+import { SyncStatus } from "./SyncStatus";
 
 type PanelView = "summary" | "login" | "register" | "confirmation";
 
@@ -29,24 +30,6 @@ function friendlyAuthError(error: unknown): string {
   if (/email rate limit/i.test(message)) return "邮件发送得太频繁，请稍后再试。";
   if (/password should be at least/i.test(message)) return "密码至少需要 6 个字符。";
   return message;
-}
-
-function formatSyncStatus(syncState: SyncState): string {
-  if (syncState.phase === "syncing") return "正在同步…";
-  if (syncState.phase === "offline") {
-    return syncState.pendingChanges
-      ? `当前离线，${syncState.pendingChanges} 项等待同步`
-      : "当前离线，将在联网后同步";
-  }
-  if (syncState.phase === "error") return "同步失败，点击下方按钮重试";
-  if (syncState.lastSyncedAt) {
-    return `已同步 · ${new Intl.DateTimeFormat("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(syncState.lastSyncedAt)}`;
-  }
-  return syncState.pendingChanges ? `${syncState.pendingChanges} 项等待同步` : "尚未进行首次同步";
 }
 
 export function SyncPanel({ syncState, onSync, onExport, onImport }: SyncPanelProps) {
@@ -181,15 +164,7 @@ export function SyncPanel({ syncState, onSync, onExport, onImport }: SyncPanelPr
                 <span>云端同步</span>
                 <strong title={user.email}>{user.email}</strong>
               </div>
-              <div className={`sync-status is-${syncState.phase}`} role="status">
-                <span aria-hidden="true" />
-                <div>
-                  <strong>{formatSyncStatus(syncState)}</strong>
-                  {syncState.phase === "error" && syncState.errorMessage && (
-                    <p>{syncState.errorMessage}</p>
-                  )}
-                </div>
-              </div>
+              <SyncStatus syncState={syncState} />
               {message && <p className="sync-form-message" role="status">{message}</p>}
               <div className="sync-primary-actions">
                 <button

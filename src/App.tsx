@@ -10,7 +10,7 @@ import { ReviewSheet } from "./components/ReviewSheet";
 import { useAuth } from "./auth/AuthProvider";
 import { useRecordSync } from "./sync/useRecordSync";
 
-const localStore = new IndexedDbRecordRepository();
+const localStore = new IndexedDbRecordRepository("done-list", import.meta.env.VITE_SUPABASE_URL);
 const repository = new LocalRecordRepository(localStore);
 const RECENT_LIMIT = 10;
 

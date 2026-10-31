@@ -31,9 +31,10 @@ export class RecordSyncService {
 
     await this.localStore.mergeFromSync(
       ((remoteRows ?? []) as DoneRecordRow[]).map(fromRow),
+      userId,
     );
 
-    const localRecords = await this.localStore.getAllForSync();
+    const localRecords = await this.localStore.getAllForSync(userId);
     if (!localRecords.length) return;
 
     const { error: writeError } = await this.client

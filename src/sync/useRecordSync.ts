@@ -14,6 +14,14 @@ export type SyncState = {
   errorMessage: string;
 };
 
+export type GuestMergeRequest = {
+  userId: string;
+  scopeVersion: number;
+  recordIds: string[];
+  isMerging: boolean;
+  errorMessage: string;
+};
+
 type UseRecordSyncOptions = {
   user: User | null;
   isAuthReady: boolean;
@@ -37,13 +45,21 @@ export function useRecordSync({
   onRecordsChanged,
 }: UseRecordSyncOptions) {
   const [syncState, setSyncState] = useState<SyncState>(signedOutState);
-  const syncPromiseRef = useRef<Promise<void> | null>(null);
+  const [guestMergeRequest, setGuestMergeRequest] = useState<GuestMergeRequest | null>(null);
+  const userId = user?.id ?? null;
+  const activeUserIdRef = useRef<string | null>(null);
+  const scopeVersionRef = useRef(0);
+  const readyScopeVersionRef = useRef<number | null>(null);
+  const mergingScopeVersionRef = useRef<number | null>(null);
+  const syncPromiseRef = useRef<{ scopeVersion: number; promise: Promise<void> } | null>(null);
   const autoSyncTimerRef = useRef<number | null>(null);
   const syncServiceRef = useRef(new RecordSyncService(supabase, localStore));
 
   const syncNow = useCallback(async () => {
-    if (!user) return;
-    if (syncPromiseRef.current) return syncPromiseRef.current;
+    const scopeVersion = scopeVersionRef.current;
+    if (!userId || activeUserIdRef.current !== userId || readyScopeVersionRef.current !== scopeVersion) return;
+    if (syncPromiseRef.current?.scopeVersion === scopeVersion) return syncPromiseRef.current.promise;
+    const isCurrentScope = () => scopeVersionRef.current === scopeVersion && activeUserIdRef.current === userId;
 
     if (!navigator.onLine) {
       setSyncState((current) => ({ ...current, phase: "offline", errorMessage: "" }));
@@ -53,8 +69,10 @@ export function useRecordSync({
     const promise = (async () => {
       setSyncState((current) => ({ ...current, phase: "syncing", errorMessage: "" }));
       try {
-        await syncServiceRef.current.sync(user.id);
+        await syncServiceRef.current.sync(userId);
+        if (!isCurrentScope()) return;
         await onRecordsChanged();
+        if (!isCurrentScope()) return;
         setSyncState({
           phase: "idle",
           lastSyncedAt: new Date(),
@@ -62,6 +80,7 @@ export function useRecordSync({
           errorMessage: "",
         });
       } catch (error) {
+        if (!isCurrentScope()) return;
         setSyncState((current) => ({
           ...current,
           phase: "error",
@@ -70,47 +89,118 @@ export function useRecordSync({
       }
     })();
 
-    syncPromiseRef.current = promise;
+    syncPromiseRef.current = { scopeVersion, promise };
     try {
       await promise;
     } finally {
-      syncPromiseRef.current = null;
+      if (syncPromiseRef.current?.promise === promise) syncPromiseRef.current = null;
     }
-  }, [onRecordsChanged, user]);
+  }, [onRecordsChanged, userId]);
 
   useEffect(() => {
     if (!isAuthReady) return;
-    let isCancelled = false;
+    const scopeVersion = ++scopeVersionRef.current;
+    activeUserIdRef.current = userId;
+    readyScopeVersionRef.current = null;
+    setGuestMergeRequest(null);
+    const isCurrentScope = () => scopeVersionRef.current === scopeVersion;
 
     async function configureScope() {
-      if (!user) {
+      if (!userId) {
         localStore.setGuestScope();
         setSyncState(signedOutState);
         await onRecordsChanged();
         return;
       }
 
-      const claimedCount = await localStore.claimGuestRecords(user.id);
-      localStore.setUserScope(user.id);
-      if (isCancelled) return;
-      setSyncState((current) => ({
-        ...current,
+      localStore.setUserScope(userId);
+      setSyncState({
+        ...signedOutState,
         phase: navigator.onLine ? "idle" : "offline",
-        pendingChanges: Math.max(current.pendingChanges, claimedCount ? 1 : 0),
-        errorMessage: "",
-      }));
+      });
       await onRecordsChanged();
-      if (!isCancelled) await syncNow();
+      const guestRecords = await localStore.getGuestRecords();
+      if (!isCurrentScope()) return;
+      if (guestRecords.length) {
+        setGuestMergeRequest({
+          userId,
+          scopeVersion,
+          recordIds: guestRecords.map((record) => record.id),
+          isMerging: false,
+          errorMessage: "",
+        });
+        return;
+      }
+      readyScopeVersionRef.current = scopeVersion;
+      await syncNow();
     }
 
-    void configureScope();
+    void configureScope().catch((error) => {
+      if (!isCurrentScope()) return;
+      setSyncState((current) => ({
+        ...current,
+        phase: "error",
+        errorMessage: error instanceof Error ? error.message : "读取本地记录失败，请刷新页面重试。",
+      }));
+    });
     return () => {
-      isCancelled = true;
+      if (isCurrentScope()) {
+        scopeVersionRef.current += 1;
+        readyScopeVersionRef.current = null;
+        activeUserIdRef.current = null;
+      }
     };
-  }, [isAuthReady, localStore, onRecordsChanged, syncNow, user]);
+  }, [isAuthReady, localStore, onRecordsChanged, syncNow, userId]);
+
+  const keepGuestRecords = useCallback(() => {
+    if (!guestMergeRequest || guestMergeRequest.userId !== activeUserIdRef.current || guestMergeRequest.scopeVersion !== scopeVersionRef.current) return;
+    const scopeVersion = scopeVersionRef.current;
+    if (mergingScopeVersionRef.current === scopeVersion) return;
+    setGuestMergeRequest(null);
+    readyScopeVersionRef.current = scopeVersion;
+    void syncNow();
+  }, [guestMergeRequest, syncNow]);
+
+  const mergeGuestRecords = useCallback(async () => {
+    if (!guestMergeRequest || guestMergeRequest.userId !== activeUserIdRef.current || guestMergeRequest.scopeVersion !== scopeVersionRef.current) return;
+    const scopeVersion = scopeVersionRef.current;
+    if (mergingScopeVersionRef.current === scopeVersion) return;
+    mergingScopeVersionRef.current = scopeVersion;
+    setGuestMergeRequest((current) => current ? { ...current, isMerging: true, errorMessage: "" } : null);
+    let claimedCount: number;
+    try {
+      claimedCount = await localStore.claimGuestRecords(guestMergeRequest.userId, guestMergeRequest.recordIds);
+    } catch (error) {
+      if (scopeVersionRef.current === scopeVersion) {
+        setGuestMergeRequest((current) => current ? {
+          ...current,
+          isMerging: false,
+          errorMessage: error instanceof Error ? error.message : "合并失败，记录仍保留在本地，请重试。",
+        } : null);
+      }
+      return;
+    } finally {
+      if (mergingScopeVersionRef.current === scopeVersion) mergingScopeVersionRef.current = null;
+    }
+    if (scopeVersionRef.current !== scopeVersion) return;
+    setGuestMergeRequest(null);
+    readyScopeVersionRef.current = scopeVersion;
+    setSyncState((current) => ({ ...current, pendingChanges: current.pendingChanges + claimedCount }));
+    try {
+      await onRecordsChanged();
+      if (scopeVersionRef.current === scopeVersion) await syncNow();
+    } catch (error) {
+      if (scopeVersionRef.current !== scopeVersion) return;
+      setSyncState((current) => ({
+        ...current,
+        phase: "error",
+        errorMessage: error instanceof Error ? error.message : "刷新记录失败，请刷新页面重试。",
+      }));
+    }
+  }, [guestMergeRequest, localStore, onRecordsChanged, syncNow]);
 
   useEffect(() => repository.subscribe(() => {
-    if (!user) return;
+    if (!userId) return;
     setSyncState((current) => ({
       ...current,
       phase: navigator.onLine ? current.phase : "offline",
@@ -118,10 +208,10 @@ export function useRecordSync({
     }));
     if (autoSyncTimerRef.current) window.clearTimeout(autoSyncTimerRef.current);
     autoSyncTimerRef.current = window.setTimeout(() => void syncNow(), 650);
-  }), [repository, syncNow, user]);
+  }), [repository, syncNow, userId]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     const handleOnline = () => void syncNow();
     const handleOffline = () => setSyncState((current) => ({ ...current, phase: "offline" }));
     const handleVisibilityChange = () => {
@@ -137,7 +227,15 @@ export function useRecordSync({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (autoSyncTimerRef.current) window.clearTimeout(autoSyncTimerRef.current);
     };
-  }, [syncNow, user]);
+  }, [syncNow, userId]);
 
-  return { syncState, syncNow };
+  return {
+    syncState,
+    syncNow,
+    guestMergeRequest: guestMergeRequest?.userId === userId && guestMergeRequest?.scopeVersion === scopeVersionRef.current
+      ? guestMergeRequest
+      : null,
+    mergeGuestRecords,
+    keepGuestRecords,
+  };
 }

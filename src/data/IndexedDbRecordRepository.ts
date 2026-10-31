@@ -50,17 +50,25 @@ export class IndexedDbRecordRepository implements RecordRepository {
     this.scopeId = `user:${userId}`;
   }
 
-  async claimGuestRecords(userId: string): Promise<number> {
-    const userScopeId = `user:${userId}`;
-    const guestRecords = await this.db.records.where("scopeId").equals(GUEST_SCOPE_ID).toArray();
-    if (!guestRecords.length) return 0;
+  async getGuestRecords(): Promise<DoneRecord[]> {
+    const records = await this.db.records.where("scopeId").equals(GUEST_SCOPE_ID).toArray();
+    return records.filter((record) => !record.deletedAt).map(toDoneRecord);
+  }
 
-    await this.db.transaction("rw", this.db.records, async () => {
-      await this.db.records.bulkPut(
-        guestRecords.map((record) => ({ ...record, scopeId: userScopeId })),
+  async claimGuestRecords(userId: string, recordIds: string[]): Promise<number> {
+    const userScopeId = `user:${userId}`;
+    return this.db.transaction("rw", this.db.records, async () => {
+      const records = await this.db.records.bulkGet([...new Set(recordIds)]);
+      const guestRecords = records.filter((record): record is StoredDoneRecord =>
+        !!record && record.scopeId === GUEST_SCOPE_ID && !record.deletedAt,
       );
+      if (guestRecords.length) {
+        await this.db.records.bulkPut(
+          guestRecords.map((record) => ({ ...record, scopeId: userScopeId })),
+        );
+      }
+      return guestRecords.length;
     });
-    return guestRecords.length;
   }
 
   async create(input: NewDoneRecord): Promise<DoneRecord> {
@@ -162,26 +170,30 @@ export class IndexedDbRecordRepository implements RecordRepository {
     return records.length;
   }
 
-  async getAllForSync(): Promise<SyncableDoneRecord[]> {
-    const records = await this.db.records.where("scopeId").equals(this.scopeId).toArray();
+  async getAllForSync(userId?: string): Promise<SyncableDoneRecord[]> {
+    const scopeId = userId ? `user:${userId}` : this.scopeId;
+    const records = await this.db.records.where("scopeId").equals(scopeId).toArray();
     return records.map(toSyncableDoneRecord);
   }
 
-  async mergeFromSync(records: SyncableDoneRecord[]): Promise<void> {
+  async mergeFromSync(records: SyncableDoneRecord[], userId?: string): Promise<void> {
     if (!records.length) return;
+    const scopeId = userId ? `user:${userId}` : this.scopeId;
 
     await this.db.transaction("rw", this.db.records, async () => {
       const existingRecords = await this.db.records.bulkGet(records.map((record) => record.id));
       const recordsToWrite = records.flatMap((record, index) => {
         const existing = existingRecords[index];
+        if (existing && existing.scopeId !== scopeId) {
+          throw new Error("同步记录与其他本地分区的记录编号冲突，已停止同步以保留本地数据。");
+        }
         if (
           existing &&
-          existing.scopeId === this.scopeId &&
           existing.updatedAt.localeCompare(record.updatedAt) > 0
         ) {
           return [];
         }
-        return [{ ...record, scopeId: this.scopeId }];
+        return [{ ...record, scopeId }];
       });
       if (recordsToWrite.length) await this.db.records.bulkPut(recordsToWrite);
     });

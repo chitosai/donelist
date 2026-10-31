@@ -60,6 +60,14 @@ async function renderSignedInPanel(syncState: SyncState = { ...signedOutState, p
 }
 
 describe("SyncPanel: entry and local validation", () => {
+  it("shows password length guidance only on the registration form", async () => {
+    const { user } = await openAuth("登录");
+    expect(screen.queryByText("至少 6 个字符")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "← 返回" }));
+    await user.click(screen.getByRole("button", { name: "注册" }));
+    expect(screen.getByText("至少 6 个字符")).toBeTruthy();
+  });
+
   it("keeps login, registration, export and import available to guests", async () => {
     const { user, callbacks } = await renderPanel();
     expect(screen.getByText("数据仅保存在本地")).toBeTruthy();

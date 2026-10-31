@@ -256,9 +256,9 @@ export function SyncPanel({ syncState, onSync, onExport, onImport }: SyncPanelPr
                   onChange={(event) => setPassword(event.target.value)}
                   required
                 />
-                <span className="sync-password-hint">至少 6 个字符</span>
                 {view === "register" && (
                   <>
+                    <span className="sync-password-hint">至少 6 个字符</span>
                     <label htmlFor="sync-password-confirmation">确认密码</label>
                     <input
                       id="sync-password-confirmation"

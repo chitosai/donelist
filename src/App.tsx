@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { AutoGrowTextarea } from "./components/AutoGrowTextarea";
 import { SyncPanel } from "./components/SyncPanel";
+import { GuestRecordsMergeDialog } from "./components/GuestRecordsMergeDialog";
 import { IndexedDbRecordRepository } from "./data/IndexedDbRecordRepository";
 import { LocalRecordRepository } from "./data/LocalRecordRepository";
 import type { DoneRecord, RecordBackup } from "./domain/DoneRecord";
@@ -59,7 +60,7 @@ export function App() {
     setRecordsRevision((current) => current + 1);
   }, []);
 
-  const { syncState, syncNow } = useRecordSync({
+  const { syncState, syncNow, guestMergeRequest, mergeGuestRecords, keepGuestRecords } = useRecordSync({
     user,
     isAuthReady,
     repository,
@@ -358,6 +359,16 @@ export function App() {
         onClose={() => setIsReviewOpen(false)}
         onRecordsChanged={refreshRecords}
       />
+
+      {guestMergeRequest && (
+        <GuestRecordsMergeDialog
+          key={guestMergeRequest.scopeVersion}
+          request={guestMergeRequest}
+          accountEmail={user?.email}
+          onMerge={mergeGuestRecords}
+          onKeepGuest={keepGuestRecords}
+        />
+      )}
     </main>
   );
 }

@@ -505,6 +505,22 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
 .review-modal-backdrop { z-index: 80; }
 .review-toast { z-index: 90; }
 
+.guest-merge-backdrop { z-index: 100; }
+.guest-merge-dialog h2 { margin-bottom: 22px; }
+.guest-merge-dialog p { margin: 0 0 14px; color: var(--muted); font-size: 14px; line-height: 1.7; }
+.guest-merge-dialog .guest-merge-account { overflow-wrap: anywhere; }
+.guest-merge-email {
+  border-radius: 6px;
+  background: #e7f2e9;
+  padding: 2px 6px;
+  color: #285d42;
+  font-weight: 600;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.guest-merge-dialog .sync-form-message { color: #a34738; }
+.guest-merge-dialog .modal-actions { margin-top: 22px; flex-wrap: wrap; }
+
 .review-backdrop {
   position: fixed;
   z-index: 50;

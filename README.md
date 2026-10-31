@@ -17,6 +17,8 @@
 
 需要 Node.js 20.19+ 或 22.12+。
 
+将 `.env.example` 复制为 `.env.development.local`，填写 Supabase 项目 URL 和 Publishable Key，此项目暂时必须配置 `VITE_SUPABASE_URL` 和 `VITE_SUPABASE_PUBLISHABLE_KEY` 才能启动。
+
 ```bash
 pnpm install
 pnpm dev --host 127.0.0.1 --port 5173 --strictPort
@@ -24,15 +26,6 @@ pnpm dev --host 127.0.0.1 --port 5173 --strictPort
 
 浏览器访问 `http://127.0.0.1:5173/`。不要改用 `localhost`，IndexedDB 数据与完整来源地址绑定。
 
-将 `.env.example` 复制为 `.env.local`，然后填写 Supabase 项目的 URL 和 Publishable Key。Publishable Key 可以在前端使用；不要把 Secret Key 写入本项目。
-
-## 验证与构建
-
-```bash
-pnpm test
-pnpm build
-pnpm preview
-```
 
 ## 数据结构
 

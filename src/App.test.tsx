@@ -43,6 +43,7 @@ beforeEach(async () => {
   await fixture.store!.db.records.clear();
   await fixture.store!.db.pendingUploads.clear();
   await fixture.store!.db.uploadScopes.clear();
+  await fixture.store!.db.downloadScopes.clear();
   syncMock.mockResolvedValue(undefined);
 });
 afterEach(() => {
@@ -172,7 +173,7 @@ describe("App: local records before background sync", () => {
     await act(async () => oldRead.resolve([recordA]));
     expect(screen.getByText(recordB.content)).toBeTruthy();
     expect(screen.queryByText(recordA.content)).toBeNull();
-    expect(syncMock).not.toHaveBeenCalledWith("user-a");
+    expect(syncMock).not.toHaveBeenCalledWith("user-a", expect.any(Object));
   });
 
   it("ignores a slow account read after logout and displays the preserved guests", async () => {

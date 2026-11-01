@@ -11,6 +11,7 @@ import { IndexedDbRecordRepository } from "../data/IndexedDbRecordRepository";
 import { LocalRecordRepository } from "../data/LocalRecordRepository";
 import { createUser, deferred } from "../test/authTestUtils";
 import { useRecordSync } from "./useRecordSync";
+import type { RecordSyncOptions } from "./RecordSyncService";
 
 const { syncMock } = vi.hoisted(() => ({ syncMock: vi.fn() }));
 vi.mock("../lib/supabase", () => ({ supabase: {} }));
@@ -52,6 +53,39 @@ function renderSync(localStore: IndexedDbRecordRepository, user: User | null = c
 }
 
 describe("useRecordSync: guest merge consent", () => {
+  it("refreshes after each committed download page while keeping the syncing state", async () => {
+    const store = createStore();
+    const pending = deferred<void>();
+    let callbacks: RecordSyncOptions | undefined;
+    syncMock.mockImplementationOnce((_userId: string, options: RecordSyncOptions) => { callbacks = options; return pending.promise; });
+    const { result, onRecordsChanged } = renderSync(store);
+    await waitFor(() => expect(result.current.syncState.phase).toBe("syncing"));
+    const initialCalls = onRecordsChanged.mock.calls.length;
+    await act(async () => { await callbacks!.onDownloadedPage!(); });
+    expect(onRecordsChanged).toHaveBeenCalledTimes(initialCalls + 1);
+    expect(result.current.syncState.phase).toBe("syncing");
+    expect(result.current.syncState.lastSyncedAt).toBeNull();
+    await act(async () => { pending.resolve(); });
+    await waitFor(() => expect(result.current.syncState.phase).toBe("idle"));
+  });
+
+  it("invalidates download callbacks on logout instead of refreshing the wrong scope", async () => {
+    const store = createStore();
+    const pending = deferred<void>();
+    let callbacks: RecordSyncOptions | undefined;
+    syncMock.mockImplementationOnce((_userId: string, options: RecordSyncOptions) => { callbacks = options; return pending.promise; });
+    const { result, rerender, onRecordsChanged } = renderSync(store);
+    await waitFor(() => expect(result.current.syncState.phase).toBe("syncing"));
+    expect(callbacks!.isActive!()).toBe(true);
+    rerender({ user: null, isAuthReady: true });
+    await waitFor(() => expect(result.current.syncState.phase).toBe("signed-out"));
+    expect(callbacks!.isActive!()).toBe(false);
+    const calls = onRecordsChanged.mock.calls.length;
+    await act(async () => { await callbacks!.onDownloadedPage!(); pending.resolve(); });
+    expect(onRecordsChanged).toHaveBeenCalledTimes(calls);
+    expect(result.current.syncState.phase).toBe("signed-out");
+  });
+
   it("does not ask or sync while signed out", async () => {
     const store = createStore();
     const guest = await addRecord(store);
@@ -96,7 +130,7 @@ describe("useRecordSync: guest merge consent", () => {
     const { result, rerender } = renderSync(store);
     await waitFor(() => expect(result.current.guestMergeRequest).not.toBeNull());
     act(() => result.current.keepGuestRecords());
-    await waitFor(() => expect(syncMock).toHaveBeenCalledWith("user-a"));
+    await waitFor(() => expect(syncMock).toHaveBeenCalledWith("user-a", expect.any(Object)));
     expect(result.current.guestMergeRequest).toBeNull();
     expect(await store.getAllForSync("user-a")).toEqual([]);
     expect(await store.getGuestRecords()).toEqual([guest]);
@@ -118,7 +152,7 @@ describe("useRecordSync: guest merge consent", () => {
     expect((await store.getRecent(10)).map((record) => record.id)).toEqual([guest.id]);
     expect(await store.getGuestRecords()).toEqual([laterGuest]);
     expect(syncMock).toHaveBeenCalledTimes(1);
-    expect(syncMock).toHaveBeenCalledWith("user-a");
+    expect(syncMock).toHaveBeenCalledWith("user-a", expect.any(Object));
     rerender({ user: null, isAuthReady: true });
     await waitFor(() => expect(result.current.syncState.phase).toBe("signed-out"));
     expect(await store.getRecent(10)).toEqual([laterGuest]);
@@ -129,7 +163,7 @@ describe("useRecordSync: guest merge consent", () => {
     const deleted = await addRecord(store);
     await store.delete(deleted.id);
     const { result } = renderSync(store);
-    await waitFor(() => expect(syncMock).toHaveBeenCalledWith("user-a"));
+    await waitFor(() => expect(syncMock).toHaveBeenCalledWith("user-a", expect.any(Object)));
     expect(result.current.guestMergeRequest).toBeNull();
     expect(await store.getAllForSync("user-a")).toEqual([]);
   });

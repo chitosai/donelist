@@ -72,7 +72,12 @@ export function useRecordSync({
     const promise = (async () => {
       setSyncState((current) => ({ ...current, phase: "syncing", errorMessage: "" }));
       try {
-        await syncServiceRef.current.sync(userId);
+        await syncServiceRef.current.sync(userId, {
+          isActive: isCurrentScope,
+          onDownloadedPage: async () => {
+            if (isCurrentScope()) await onRecordsChanged();
+          },
+        });
         if (!isCurrentScope()) return;
         await onRecordsChanged();
         if (!isCurrentScope()) return;

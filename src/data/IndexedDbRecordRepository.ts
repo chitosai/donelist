@@ -1,6 +1,7 @@
 import Dexie, { type EntityTable, type Table } from "dexie";
 import type { DoneRecord, NewDoneRecord, RecordBackup } from "../domain/DoneRecord";
 import type { RecordRepository } from "./RecordRepository";
+import { parseSyncVersion } from "../sync/syncVersion";
 
 const GUEST_SCOPE_ID = "guest";
 
@@ -21,11 +22,13 @@ export type PendingRecordUpload = {
 };
 
 type UploadScope = { syncTarget: string; scopeId: string; initializedAt: string };
+type DownloadScope = { syncTarget: string; scopeId: string; cursor: string };
 
 class DoneListDatabase extends Dexie {
   records!: EntityTable<StoredDoneRecord, "id">;
   pendingUploads!: Table<PendingRecordUpload, [string, string, string]>;
   uploadScopes!: Table<UploadScope, [string, string]>;
+  downloadScopes!: Table<DownloadScope, [string, string]>;
 
   constructor(databaseName: string) {
     super(databaseName);
@@ -43,6 +46,9 @@ class DoneListDatabase extends Dexie {
       records: "&id, scopeId, happenedAt, createdAt, updatedAt, [scopeId+happenedAt]",
       pendingUploads: "[syncTarget+scopeId+recordId], [syncTarget+scopeId]",
       uploadScopes: "[syncTarget+scopeId]",
+    });
+    this.version(4).stores({
+      downloadScopes: "[syncTarget+scopeId]",
     });
   }
 }
@@ -100,6 +106,32 @@ export class IndexedDbRecordRepository implements RecordRepository {
 
   getPendingUploadCount(userId: string): Promise<number> {
     return this.db.pendingUploads.where("[syncTarget+scopeId]").equals([this.syncTarget, `user:${userId}`]).count();
+  }
+
+  async getDownloadCursor(userId: string): Promise<string> {
+    const progress = await this.db.downloadScopes.get([this.syncTarget, `user:${userId}`]);
+    return parseSyncVersion(progress?.cursor ?? "0");
+  }
+
+  async applyDownloadedPage(
+    userId: string,
+    records: SyncableDoneRecord[],
+    afterVersion: string,
+    nextVersion: string,
+    pendingAtReadStart: PendingRecordUpload[],
+  ): Promise<boolean> {
+    const after = parseSyncVersion(afterVersion);
+    const next = parseSyncVersion(nextVersion);
+    if (BigInt(next) < BigInt(after)) throw new Error("下载进度不能倒退。");
+    const scopeId = `user:${userId}`;
+    return this.db.transaction("rw", this.db.records, this.db.pendingUploads, this.db.downloadScopes, async () => {
+      // Another tab may have committed a page while this request was in flight.
+      // Its progress must not be overwritten by this older response.
+      if (await this.getDownloadCursor(userId) !== after) return false;
+      await this.mergeFromSync(records, userId, pendingAtReadStart);
+      await this.db.downloadScopes.put({ syncTarget: this.syncTarget, scopeId, cursor: next });
+      return true;
+    });
   }
 
   async acknowledgeUploads(userId: string, uploads: PendingRecordUpload[]): Promise<void> {

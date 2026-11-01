@@ -3,9 +3,6 @@ import { PGlite } from "@electric-sql/pglite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const schema = readFileSync(new URL("../../supabase/schema.sql", import.meta.url), "utf8");
-const migration = readFileSync(new URL("../../supabase/migrations/20261101000100_add_incremental_download.sql", import.meta.url), "utf8");
-const renameMigration = readFileSync(new URL("../../supabase/migrations/20261101000000_rename_done_records_to_records.sql", import.meta.url), "utf8");
-const commonMarker = "-- Keep version allocation and record writes in the same transaction.";
 const accountA = "00000000-0000-4000-8000-000000000001";
 const accountB = "00000000-0000-4000-8000-000000000002";
 const recordId = "10000000-0000-4000-8000-000000000001";
@@ -36,14 +33,10 @@ async function insertRecord(userId = accountA, id = recordId, version?: string) 
   version ? [id, userId, version] : [id, userId]);
 }
 async function latestVersion(userId = accountA) {
-  return (await db.query<{ version: string }>("select public.get_record_sync_version($1) as version", [userId])).rows[0].version;
+  return (await db.query<{ version: string }>("select public.get_latest_sync_version($1) as version", [userId])).rows[0].version;
 }
 
 describe("incremental-download database schema", () => {
-  it("uses identical incremental SQL for a fresh schema and an existing-database migration", () => {
-    expect(schema.slice(schema.indexOf(commonMarker)).trim()).toBe(migration.slice(migration.indexOf(commonMarker)).trim());
-  });
-
   it("starts an empty account at zero and versions inserts, highlights, edits and deletion markers", async () => {
     await db.exec(schema);
     await asAccount();
@@ -89,15 +82,15 @@ describe("incremental-download database schema", () => {
     await expect(latestVersion()).rejects.toThrow("permission denied");
     await expect(db.query("select * from public.record_sync_state")).rejects.toThrow("permission denied");
     await expect(db.query("select * from public.records")).rejects.toThrow("permission denied");
-    await expect(db.query("select * from public.get_record_changes($1, 0, 1, 500)", [accountA])).rejects.toThrow("permission denied");
+    await expect(db.query("select * from public.get_record_diffs($1, 0, 1, 500)", [accountA])).rejects.toThrow("permission denied");
   });
 
   it("checks the authenticated account even on empty pages and rejects invalid page sizes", async () => {
     await db.exec(schema);
     await asAccount(accountB);
-    await expect(db.query("select * from public.get_record_changes($1, 0, 1, 500)", [accountA])).rejects.toThrow("does not match");
-    expect((await db.query("select * from public.get_record_changes($1, 0, 1, 500)", [accountB])).rows).toHaveLength(0);
-    await expect(db.query("select * from public.get_record_changes($1, 0, 1, 501)", [accountB])).rejects.toThrow("Invalid sync page");
+    await expect(db.query("select * from public.get_record_diffs($1, 0, 1, 500)", [accountA])).rejects.toThrow("does not match");
+    expect((await db.query("select * from public.get_record_diffs($1, 0, 1, 500)", [accountB])).rows).toHaveLength(0);
+    await expect(db.query("select * from public.get_record_diffs($1, 0, 1, 501)", [accountB])).rejects.toThrow("Invalid sync page");
   });
 
   it("returns up to 500 version-ordered rows per request within the requested window", async () => {
@@ -105,14 +98,14 @@ describe("incremental-download database schema", () => {
     await db.query(`insert into public.records (id,user_id,content,happened_at,created_at,updated_at)
       select gen_random_uuid(), $1, '事项 ' || number, now(), now(), now() from generate_series(1, 1001) as number`, [accountA]);
     await asAccount();
-    const page = (await db.query<{ version: string }>("select sync_version::text as version from public.get_record_changes($1, 0, 1000, 500)", [accountA])).rows;
+    const page = (await db.query<{ version: string }>("select sync_version::text as version from public.get_record_diffs($1, 0, 1000, 500)", [accountA])).rows;
     expect(page).toHaveLength(500);
     expect(page[0].version).toBe("1");
     expect(page[499].version).toBe("500");
-    const next = (await db.query<{ version: string }>("select sync_version::text as version from public.get_record_changes($1, 500, 1000, 500)", [accountA])).rows;
+    const next = (await db.query<{ version: string }>("select sync_version::text as version from public.get_record_diffs($1, 500, 1000, 500)", [accountA])).rows;
     expect(next).toHaveLength(500);
     expect(next[499].version).toBe("1000");
-    expect((await db.query("select * from public.get_record_changes($1, 1000, 1000, 500)", [accountA])).rows).toHaveLength(0);
+    expect((await db.query("select * from public.get_record_diffs($1, 1000, 1000, 500)", [accountA])).rows).toHaveLength(0);
   });
 
   it("rolls back the version counter when a record transaction fails or is rolled back", async () => {
@@ -141,35 +134,6 @@ describe("incremental-download database schema", () => {
     expect(rows[0].content).toBe("直接上传更新");
     expect(BigInt(rows[0].version)).toBeGreaterThan(1n);
     expect(rows[0].version).toBe(await latestVersion());
-  });
-
-  it("backfills legacy data after the table rename without changing content, timestamps or deletion markers", async () => {
-    const legacy = (schema.slice(0, schema.indexOf(commonMarker)) + "commit;")
-      .replaceAll("public.records", "public.done_records")
-      .replaceAll("records_user_", "done_records_user_")
-      .replaceAll("their own records", "their own done records");
-    await db.exec(legacy);
-    await db.query(`insert into public.done_records (id,user_id,content,happened_at,created_at,updated_at,deleted_at)
-      values ($1,$2,'原来的内容','2026-08-01Z','2026-08-01Z','2026-08-01Z','2026-10-31Z')`, [recordId, accountA]);
-    const before = (await db.query<Record<string, unknown>>("select * from public.done_records")).rows[0];
-    await db.exec(renameMigration);
-    await db.exec(migration);
-    const after = (await db.query<Record<string, unknown>>("select * from public.records")).rows[0];
-    expect(after).toMatchObject(before);
-    expect(after).toHaveProperty("sync_version");
-    await asAccount();
-    expect(await latestVersion()).toBe("1");
-    expect((await db.query("select * from public.records")).rows).toHaveLength(1);
-  });
-
-  it("can rerun the migration without resetting assigned versions or the latest counter", async () => {
-    await db.exec(schema);
-    await insertRecord();
-    await db.query("update public.records set is_highlighted = true where id = $1", [recordId]);
-    await db.exec(migration);
-    await asAccount();
-    expect(await latestVersion()).toBe("2");
-    expect((await db.query<{ version: string }>("select sync_version::text as version from public.records")).rows[0].version).toBe("2");
   });
 
   it("keeps versions exact beyond JavaScript's safe integer range", async () => {

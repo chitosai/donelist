@@ -133,7 +133,7 @@ create policy "Users can read their own sync state"
 
 -- The latest committed version bounds this download window. Text keeps bigint
 -- cursors exact in JavaScript; the caller cannot inspect a different account.
-create or replace function public.get_record_sync_version(p_user_id uuid)
+create or replace function public.get_latest_sync_version(p_user_id uuid)
 returns text
 language plpgsql
 stable
@@ -150,12 +150,12 @@ begin
 end;
 $function$;
 
-revoke all on function public.get_record_sync_version(uuid) from public, anon, authenticated;
-grant execute on function public.get_record_sync_version(uuid) to authenticated;
+revoke all on function public.get_latest_sync_version(uuid) from public, anon, authenticated;
+grant execute on function public.get_latest_sync_version(uuid) to authenticated;
 
 -- Validate the account on every page, including empty results. A plain table
 -- GET under a changed auth session could otherwise look like an empty final page.
-create or replace function public.get_record_changes(
+create or replace function public.get_record_diffs(
   p_user_id uuid,
   p_after_version bigint,
   p_until_version bigint,
@@ -186,8 +186,8 @@ begin
 end;
 $function$;
 
-revoke all on function public.get_record_changes(uuid, bigint, bigint, integer) from public, anon, authenticated;
-grant execute on function public.get_record_changes(uuid, bigint, bigint, integer) to authenticated;
+revoke all on function public.get_record_diffs(uuid, bigint, bigint, integer) from public, anon, authenticated;
+grant execute on function public.get_record_diffs(uuid, bigint, bigint, integer) to authenticated;
 
 
 -- Physical deletion would make other devices miss the deletion. The existing

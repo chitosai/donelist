@@ -30,8 +30,8 @@ function setup(rows: Row[] = []) {
     return { error: null };
   });
   const rpc = vi.fn((name: string, args: SyncRpcArgs) => {
-    if (name === "get_record_sync_version") return Promise.resolve<VersionResult>({ data: latestFor(args.p_user_id), error: null });
-    expect(name).toBe("get_record_changes");
+    if (name === "get_latest_sync_version") return Promise.resolve<VersionResult>({ data: latestFor(args.p_user_id), error: null });
+    expect(name).toBe("get_record_diffs");
     return { select(columns: string) {
       expect(columns).toContain("sync_version::text");
       return { order(column: string) {
@@ -58,7 +58,7 @@ describe("RecordSyncService: persistent upload queue", () => {
     expect(read).toHaveBeenCalledTimes(1);
     expect(upsert).toHaveBeenCalledTimes(1);
     expect(from.mock.calls).toEqual([["records"]]);
-    expect(rpc).toHaveBeenCalledWith("get_record_changes", { p_user_id: "user-a", p_after_version: "0", p_until_version: "2", p_page_size: 500 });
+    expect(rpc).toHaveBeenCalledWith("get_record_diffs", { p_user_id: "user-a", p_after_version: "0", p_until_version: "2", p_page_size: 500 });
   });
   it("does not echo downloaded rows and uploads only the one edited record", async () => {
     const { store, service, upsert } = setup([makeRow(1), makeRow(2), makeRow(3)]);
@@ -175,7 +175,7 @@ describe("RecordSyncService: persistent upload queue", () => {
     const account = await store.create({ content: "账号 A", happenedAt: new Date().toISOString() });
     read.mockImplementationOnce(async () => { store.setGuestScope(); return { data: [makeRow(1)], error: null }; });
     await service.sync("user-a");
-    expect(rpc).toHaveBeenCalledWith("get_record_changes", expect.objectContaining({ p_user_id: "user-a" }));
+    expect(rpc).toHaveBeenCalledWith("get_record_diffs", expect.objectContaining({ p_user_id: "user-a" }));
     expect(upsert.mock.calls[0][0].map((row) => row.id)).toEqual([account.id]);
     expect(await store.getGuestRecords()).toEqual([guest]);
     expect(await store.getRecent(10)).toEqual([guest]);
@@ -190,7 +190,7 @@ describe("RecordSyncService: incremental downloads", () => {
       const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       requests.push({ url, body });
-      const data = url.pathname.endsWith("get_record_sync_version") ? "2" : [makeRow(0), makeRow(1)];
+      const data = url.pathname.endsWith("get_latest_sync_version") ? "2" : [makeRow(0), makeRow(1)];
       return new Response(JSON.stringify(data), { status: 200, headers: { "Content-Type": "application/json" } });
     });
     const client = createClient("https://sync-test.invalid", "test-publishable-key", {
@@ -198,7 +198,7 @@ describe("RecordSyncService: incremental downloads", () => {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
     await new RecordSyncService(client, store).sync("user-a");
-    expect(requests.map((request) => request.url.pathname)).toEqual(["/rest/v1/rpc/get_record_sync_version", "/rest/v1/rpc/get_record_changes"]);
+    expect(requests.map((request) => request.url.pathname)).toEqual(["/rest/v1/rpc/get_latest_sync_version", "/rest/v1/rpc/get_record_diffs"]);
     expect(requests[1].body).toEqual({ p_user_id: "user-a", p_after_version: "0", p_until_version: "2", p_page_size: 500 });
     expect(requests[1].url.searchParams.get("select")).toContain("sync_version::text");
     expect(requests[1].url.searchParams.get("order")).toBe("sync_version.asc");
@@ -216,7 +216,7 @@ describe("RecordSyncService: incremental downloads", () => {
     read.mockClear();
     await service.sync("user-a");
     expect(read).not.toHaveBeenCalled();
-    expect(rpc).toHaveBeenLastCalledWith("get_record_sync_version", { p_user_id: "user-a" });
+    expect(rpc).toHaveBeenLastCalledWith("get_latest_sync_version", { p_user_id: "user-a" });
   }, 30_000);
 
   it("downloads only new, edited and deleted records regardless of their happened date", async () => {
@@ -359,7 +359,7 @@ describe("RecordSyncService: incremental downloads", () => {
     expect(onDownloadedPage).not.toHaveBeenCalled();
   });
 
-  it("reports an unapplied database migration without falling back to full downloads", async () => {
+  it("reports a missing sync RPC without falling back to full downloads", async () => {
     const { store, service, rpc, read, upsert } = setup();
     await store.create({ content: "先保存在本地", happenedAt: "2026-11-01T00:00:00Z" });
     rpc.mockResolvedValueOnce({ data: null, error: Object.assign(new Error("function missing"), { code: "PGRST202" }) });

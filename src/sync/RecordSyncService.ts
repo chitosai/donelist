@@ -41,7 +41,7 @@ export class RecordSyncService {
     // The RPC checks that the requested account still matches the auth session.
     // A transactionally maintained counter is a committed upper bound, unlike
     // a sequence value or a timestamp supplied by a client device.
-    const { data: latest, error: versionError } = await this.client.rpc("get_record_sync_version", { p_user_id: userId });
+    const { data: latest, error: versionError } = await this.client.rpc("get_latest_sync_version", { p_user_id: userId });
     if (versionError) {
       if (["PGRST202", "42883"].includes(versionError.code)) {
         throw new Error("数据库尚未启用增量同步，请先执行数据库升级脚本。本地记录已保留。");
@@ -58,7 +58,7 @@ export class RecordSyncService {
       if (!isActive()) return;
       if (BigInt(cursor) >= BigInt(latestVersion)) break;
       const { data, error } = await this.client
-        .rpc("get_record_changes", {
+        .rpc("get_record_diffs", {
           p_user_id: userId,
           p_after_version: cursor,
           p_until_version: latestVersion,

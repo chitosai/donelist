@@ -112,13 +112,13 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   stroke-linejoin: round;
 }
 .sync-menu-button.is-syncing svg { animation: sync-icon-spin 1s linear infinite; }
-@keyframes sync-icon-spin { to { transform: rotate(360deg); } }
+@keyframes sync-icon-spin { to { transform: rotate(-360deg); } }
 .sync-attention-dot {
   position: absolute;
-  top: 1px;
-  right: 1px;
-  width: 9px;
-  height: 9px;
+  top: -1px;
+  right: -1px;
+  width: 13px;
+  height: 13px;
   border: 2px solid #f4f1e8;
   border-radius: 50%;
   background: var(--orange);

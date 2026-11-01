@@ -26,7 +26,7 @@ function setup(rows: Row[] = []) {
     return { error: null };
   });
   const eq = vi.fn();
-  const client = { from: vi.fn(() => ({
+  const client = { from: vi.fn((_table: string) => ({
     select: () => {
       let userId = "";
       let lastId: string | null = null;
@@ -41,7 +41,7 @@ function setup(rows: Row[] = []) {
       return query;
     }, upsert,
   })) };
-  return { store, cloud, read, upsert, eq, service: new RecordSyncService(client as unknown as SupabaseClient, store) };
+  return { store, cloud, read, upsert, eq, from: client.from, service: new RecordSyncService(client as unknown as SupabaseClient, store) };
 }
 function makeRow(index = 0): Row {
   return { id: `${index}`.padStart(8, "0"), user_id: "user-a", content: `云端记录 ${index}`, happened_at: "2026-08-01T00:00:00Z", created_at: "2026-08-01T00:00:00Z", updated_at: "2026-08-01T00:00:00Z", is_highlighted: false, deleted_at: null };
@@ -51,6 +51,14 @@ function fromRow(row: Row): SyncableDoneRecord {
 }
 
 describe("RecordSyncService: persistent upload queue", () => {
+  it("reads and writes the records table", async () => {
+    const { store, service, from, read, upsert } = setup([makeRow(1)]);
+    await store.create({ content: "使用新表名同步", happenedAt: "2026-11-01T00:00:00Z" });
+    await service.sync("user-a");
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(from.mock.calls).toEqual([["records"], ["records"]]);
+  });
   it("does not echo downloaded rows and uploads only the one edited record", async () => {
     const { store, service, upsert } = setup([makeRow(1), makeRow(2), makeRow(3)]);
     await service.sync("user-a");

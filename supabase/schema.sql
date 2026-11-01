@@ -1,4 +1,4 @@
-create table if not exists public.done_records (
+create table if not exists public.records (
   id uuid primary key,
   user_id uuid not null references auth.users (id) on delete cascade,
   content text not null check (char_length(content) between 1 and 500),
@@ -9,31 +9,31 @@ create table if not exists public.done_records (
   deleted_at timestamptz
 );
 
-create index if not exists done_records_user_happened_at_idx
-  on public.done_records (user_id, happened_at);
+create index if not exists records_user_happened_at_idx
+  on public.records (user_id, happened_at);
 
-create index if not exists done_records_user_updated_at_idx
-  on public.done_records (user_id, updated_at);
+create index if not exists records_user_updated_at_idx
+  on public.records (user_id, updated_at);
 
-alter table public.done_records enable row level security;
+alter table public.records enable row level security;
 
-drop policy if exists "Users can read their own done records" on public.done_records;
-create policy "Users can read their own done records"
-  on public.done_records for select
+drop policy if exists "Users can read their own records" on public.records;
+create policy "Users can read their own records"
+  on public.records for select
   using ((select auth.uid()) = user_id);
 
-drop policy if exists "Users can insert their own done records" on public.done_records;
-create policy "Users can insert their own done records"
-  on public.done_records for insert
+drop policy if exists "Users can insert their own records" on public.records;
+create policy "Users can insert their own records"
+  on public.records for insert
   with check ((select auth.uid()) = user_id);
 
-drop policy if exists "Users can update their own done records" on public.done_records;
-create policy "Users can update their own done records"
-  on public.done_records for update
+drop policy if exists "Users can update their own records" on public.records;
+create policy "Users can update their own records"
+  on public.records for update
   using ((select auth.uid()) = user_id)
   with check ((select auth.uid()) = user_id);
 
-drop policy if exists "Users can delete their own done records" on public.done_records;
-create policy "Users can delete their own done records"
-  on public.done_records for delete
+drop policy if exists "Users can delete their own records" on public.records;
+create policy "Users can delete their own records"
+  on public.records for delete
   using ((select auth.uid()) = user_id);

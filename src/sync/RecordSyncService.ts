@@ -33,7 +33,7 @@ export class RecordSyncService {
     // This also makes the legacy-data reconciliation safe beyond one API page.
     while (true) {
       let query = this.client
-        .from("done_records")
+        .from("records")
         .select("id,user_id,content,happened_at,created_at,updated_at,is_highlighted,deleted_at")
         .eq("user_id", userId)
         .order("id")
@@ -57,7 +57,7 @@ export class RecordSyncService {
     for (let offset = 0; offset < pendingUploads.length; offset += UPLOAD_BATCH_SIZE) {
       const batch = pendingUploads.slice(offset, offset + UPLOAD_BATCH_SIZE);
       const { error } = await this.client
-        .from("done_records")
+        .from("records")
         .upsert(batch.map((upload) => toRow(upload.record, userId)), { onConflict: "id" });
       if (error) throw error;
       await this.localStore.acknowledgeUploads(userId, batch);

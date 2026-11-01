@@ -65,6 +65,55 @@ function restoreAccount(userId = "user-a") {
 }
 
 describe("App: local records before background sync", () => {
+  it("exports only the signed-in account through the collapsed data-management entry", async () => {
+    const accountRecord = await seedAccount("user-a", "当前账号的备份记录");
+    await seedAccount("user-b", "不能混入导出的其他账号记录");
+    const exportBackup = vi.spyOn(fixture.store!, "exportBackup");
+    const createObjectURL = vi.fn(() => "blob:account-backup-test");
+    const revokeObjectURL = vi.fn();
+    const NativeURL = URL;
+    vi.stubGlobal("URL", class extends NativeURL {
+      static createObjectURL = createObjectURL;
+      static revokeObjectURL = revokeObjectURL;
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    restoreAccount();
+    render(<App />);
+    await waitFor(() => expect(screen.getByText(accountRecord.content)).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "同步与账户" }));
+    fireEvent.click(screen.getByText("数据管理"));
+    fireEvent.click(screen.getByRole("button", { name: "导出数据" }));
+    await screen.findByText("备份已导出");
+    expect(exportBackup).toHaveBeenCalledTimes(1);
+    expect((await exportBackup.mock.results[0].value).records).toEqual([accountRecord]);
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:account-backup-test");
+  });
+
+  it("imports a backup into the signed-in account and queues its records for cloud sync", async () => {
+    const accountRecord = await seedAccount();
+    const otherRecord = await seedAccount("user-b", "其他账号保持不变");
+    const importedRecord = { ...accountRecord, id: crypto.randomUUID(), content: "从备份导入当前账号" };
+    restoreAccount();
+    const { container } = render(<App />);
+    await waitFor(() => expect(screen.getByText(accountRecord.content)).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "同步与账户" }));
+    fireEvent.click(screen.getByText("数据管理"));
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const chooseFile = vi.spyOn(fileInput, "click");
+    fireEvent.click(screen.getByRole("button", { name: "导入数据" }));
+    expect(chooseFile).toHaveBeenCalledTimes(1);
+    const backup = { format: "done-list-backup", version: 1, exportedAt: new Date().toISOString(), records: [importedRecord] };
+    const file = new File([JSON.stringify(backup)], "backup.json", { type: "application/json" });
+    Object.defineProperty(file, "text", { value: async () => JSON.stringify(backup) });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    await screen.findByText("已导入 1 条记录");
+    expect(screen.getByText(importedRecord.content)).toBeTruthy();
+    expect((await fixture.store!.getAllForSync("user-a")).map((record) => record.id)).toContain(importedRecord.id);
+    expect((await fixture.store!.getAllForSync("user-b")).map((record) => record.id)).toEqual([otherRecord.id]);
+    expect((await fixture.store!.getPendingUploads("user-a")).map((upload) => upload.recordId)).toContain(importedRecord.id);
+  });
+
   it("uses a decorative calendar icon while preserving the Review button's accessible name", async () => {
     fixture.auth.isAuthReady = true;
     render(<App />);

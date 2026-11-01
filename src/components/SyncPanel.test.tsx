@@ -372,6 +372,53 @@ describe("SyncPanel: server failures and recovery", () => {
 });
 
 describe("SyncPanel: login, signout and sync state", () => {
+  it("keeps signed-in data management collapsed by default and uses icon-only backup actions", async () => {
+    const { user, callbacks } = await renderSignedInPanel();
+    const disclosure = screen.getByText("数据管理").closest("details") as HTMLDetailsElement;
+    expect(disclosure.open).toBe(false);
+    expect(callbacks.onExport).not.toHaveBeenCalled();
+    expect(callbacks.onImport).not.toHaveBeenCalled();
+    await user.click(screen.getByText("数据管理"));
+    expect(disclosure.open).toBe(true);
+    const exportButton = screen.getByRole("button", { name: "导出数据" });
+    const importButton = screen.getByRole("button", { name: "导入数据" });
+    for (const button of [exportButton, importButton]) {
+      expect(button.textContent).toBe("");
+      expect(button.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    }
+    await user.click(exportButton);
+    await user.click(importButton);
+    expect(callbacks.onExport).toHaveBeenCalledTimes(1);
+    expect(callbacks.onImport).toHaveBeenCalledTimes(1);
+    expect(callbacks.onSync).not.toHaveBeenCalled();
+    expect(authMock.signOut).not.toHaveBeenCalled();
+    await user.click(screen.getByText("数据管理"));
+    expect(disclosure.open).toBe(false);
+  });
+
+  it.each(["trigger", "Escape", "outside click"] as const)("collapses data management when the account menu is reopened after %s", async (method) => {
+    const { user } = await renderSignedInPanel();
+    await user.click(screen.getByText("数据管理"));
+    if (method === "trigger") await user.click(screen.getByRole("button", { name: "同步与账户" }));
+    else if (method === "Escape") await user.keyboard("{Escape}");
+    else await user.click(document.body);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "同步与账户" }));
+    expect((screen.getByText("数据管理").closest("details") as HTMLDetailsElement).open).toBe(false);
+  });
+
+  it("resets expanded data management when the account changes and preserves the existing guest actions", async () => {
+    const { user } = await renderSignedInPanel();
+    await user.click(screen.getByText("数据管理"));
+    act(() => emitAuthEvent("SIGNED_IN", createSession(createUser("other-user", "other@example.com"))));
+    expect((screen.getByText("数据管理").closest("details") as HTMLDetailsElement).open).toBe(false);
+    expect(screen.getByText("other@example.com")).toBeTruthy();
+    act(() => emitAuthEvent("SIGNED_OUT", null));
+    expect(screen.queryByText("数据管理")).toBeNull();
+    expect(screen.getByRole("button", { name: "导出数据" }).textContent).toBe("导出数据");
+    expect(screen.getByRole("button", { name: "导入数据" }).textContent).toBe("导入数据");
+  });
+
   it("suppresses duplicate login requests and restores the button after failure", async () => {
     const pending = deferred<Awaited<ReturnType<typeof authMock.signInWithPassword>>>();
     authMock.signInWithPassword.mockReturnValue(pending.promise);

@@ -22,6 +22,19 @@ function friendlyAuthError(error: unknown): string {
   return message;
 }
 
+function DataTransferIcon({ direction }: { direction: "export" | "import" }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M4 15v5h16v-5" />
+      {direction === "export" ? (
+        <path d="M12 3v12m-4-4 4 4 4-4" />
+      ) : (
+        <path d="M12 15V3m-4 4 4-4 4 4" />
+      )}
+    </svg>
+  );
+}
+
 export function SyncPanel({ syncState, onSync, onExport, onImport }: SyncPanelProps) {
   const { user, isAuthReady, signIn, signUp, signOut } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
@@ -169,6 +182,22 @@ export function SyncPanel({ syncState, onSync, onExport, onImport }: SyncPanelPr
                   {isSubmitting ? "正在退出…" : "退出登录"}
                 </button>
               </div>
+              <details className="sync-data-management" key={user.id}>
+                <summary>
+                  <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+                    <path d="m4 2 4 4-4 4Z" />
+                  </svg>
+                  数据管理
+                </summary>
+                <div className="sync-data-icon-actions">
+                  <button className="sync-data-icon-button" type="button" aria-label="导出数据" onClick={() => void onExport()}>
+                    <DataTransferIcon direction="export" />
+                  </button>
+                  <button className="sync-data-icon-button" type="button" aria-label="导入数据" onClick={onImport}>
+                    <DataTransferIcon direction="import" />
+                  </button>
+                </div>
+              </details>
             </>
           ) : view === "confirmation" ? (
             <p className="sync-form-message is-success" role="status">{message}</p>

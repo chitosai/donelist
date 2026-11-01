@@ -198,6 +198,73 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   padding-top: 13px;
 }
 .sync-data-actions button { color: #59675f; }
+.sync-data-management { margin-top: 12px; }
+.sync-data-management summary {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.5;
+  list-style: none;
+}
+.sync-data-management summary::-webkit-details-marker { display: none; }
+.sync-data-management summary:hover { color: var(--ink); }
+.sync-data-management summary > svg {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  fill: currentColor;
+  transition: transform .15s;
+}
+.sync-data-management[open] summary > svg { transform: rotate(90deg); }
+.sync-data-icon-actions { display: flex; gap: 10px; margin-top: 8px; }
+.sync-data-icon-button {
+  position: relative;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: transparent;
+  color: #59675f;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.sync-data-icon-button:hover { border-color: #aeb8b1; background: #f2f1ea; color: var(--ink); }
+.sync-data-icon-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sync-data-icon-button::after {
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  z-index: 1;
+  border-radius: 5px;
+  background: var(--ink);
+  padding: 4px 7px;
+  color: white;
+  content: attr(aria-label);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, 3px);
+  transition: opacity .15s, transform .15s, visibility .15s;
+}
+.sync-data-icon-button:hover::after,
+.sync-data-icon-button:focus-visible::after { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
 .sync-loading { padding: 16px 4px; color: var(--muted); font-size: 13px; text-align: center; }
 
 .sync-status {

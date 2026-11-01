@@ -42,13 +42,14 @@ async function addRecord(store: IndexedDbRecordRepository, content = "登录前�
   return store.create({ content, happenedAt: new Date().toISOString() });
 }
 
-function renderSync(localStore: IndexedDbRecordRepository, user: User | null = createUser("user-a"), isAuthReady = true, isStrictMode = false) {
+function renderSync(localStore: IndexedDbRecordRepository, user: User | null = createUser("user-a"), isAuthReady = true, isStrictMode = false, isRestoringSession = false) {
   const repository = new LocalRecordRepository(localStore);
   const onRecordsChanged = vi.fn(async () => undefined);
   const wrapper = isStrictMode ? ({ children }: PropsWithChildren) => <StrictMode>{children}</StrictMode> : undefined;
   const rendered = renderHook((props: { user: User | null; isAuthReady: boolean }) => useRecordSync({
     ...props, localStore, repository, onRecordsChanged,
-  }), { initialProps: { user, isAuthReady }, wrapper });
+  }), { initialProps: { user: isAuthReady && !isRestoringSession ? null : user, isAuthReady }, wrapper });
+  if (isAuthReady && user && !isRestoringSession) rendered.rerender({ user, isAuthReady });
   return { ...rendered, repository, onRecordsChanged };
 }
 
@@ -104,7 +105,9 @@ describe("useRecordSync: guest merge consent", () => {
     expect(getGuestRecords).not.toHaveBeenCalled();
     expect(syncMock).not.toHaveBeenCalled();
     rerender({ user: createUser("user-a"), isAuthReady: true });
-    await waitFor(() => expect(result.current.guestMergeRequest?.recordIds).toHaveLength(1));
+    await waitFor(() => expect(result.current.syncState.lastSyncedAt).not.toBeNull());
+    expect(getGuestRecords).not.toHaveBeenCalled();
+    expect(result.current.guestMergeRequest).toBeNull();
   });
 
   it("asks after login without moving or uploading any guest record, even on background sync triggers", async () => {
@@ -137,6 +140,85 @@ describe("useRecordSync: guest merge consent", () => {
     rerender({ user: null, isAuthReady: true });
     await waitFor(() => expect(result.current.syncState.phase).toBe("signed-out"));
     expect(await store.getRecent(10)).toEqual([guest]);
+  });
+
+  it("skips the prompt after a page reload but asks again after a new login, without storing a choice", async () => {
+    const store = createStore();
+    const guest = await addRecord(store);
+    const first = renderSync(store);
+    await waitFor(() => expect(first.result.current.guestMergeRequest).not.toBeNull());
+    act(() => first.result.current.keepGuestRecords());
+    await waitFor(() => expect(first.result.current.syncState.lastSyncedAt).not.toBeNull());
+    first.unmount();
+
+    const reopened = renderSync(store, createUser("user-a"), false, true, true);
+    reopened.rerender({ user: createUser("user-a"), isAuthReady: true });
+    await waitFor(() => expect(reopened.result.current.syncState.lastSyncedAt).not.toBeNull());
+    expect(reopened.result.current.guestMergeRequest).toBeNull();
+    expect(await store.getGuestRecords()).toEqual([guest]);
+    expect(await store.getAllForSync("user-a")).toEqual([]);
+
+    reopened.rerender({ user: null, isAuthReady: true });
+    await waitFor(() => expect(reopened.result.current.syncState.phase).toBe("signed-out"));
+    expect(await store.getRecent(10)).toEqual([guest]);
+    reopened.rerender({ user: createUser("user-a"), isAuthReady: true });
+    await waitFor(() => expect(reopened.result.current.guestMergeRequest?.recordIds).toEqual([guest.id]));
+  });
+
+  it.each([true, false])("never inspects guests on initial session restoration (auth initially ready: %s)", async (isInitiallyReady) => {
+    const store = createStore();
+    const guest = await addRecord(store);
+    const getGuestRecords = vi.spyOn(store, "getGuestRecords");
+    const claimGuestRecords = vi.spyOn(store, "claimGuestRecords");
+    const { result, rerender } = renderSync(store, createUser("user-a"), isInitiallyReady, true, true);
+    if (!isInitiallyReady) rerender({ user: createUser("user-a"), isAuthReady: true });
+    await waitFor(() => expect(result.current.syncState.lastSyncedAt).not.toBeNull());
+    expect(result.current.guestMergeRequest).toBeNull();
+    expect(getGuestRecords).not.toHaveBeenCalled();
+    expect(claimGuestRecords).not.toHaveBeenCalled();
+    expect(await store.getGuestRecords()).toEqual([guest]);
+    expect(await store.getAllForSync("user-a")).toEqual([]);
+  });
+
+  it("does not prompt on reload even if the previous login prompt was never answered", async () => {
+    const store = createStore();
+    const guest = await addRecord(store);
+    const first = renderSync(store);
+    await waitFor(() => expect(first.result.current.guestMergeRequest).not.toBeNull());
+    first.unmount();
+    const reopened = renderSync(store, createUser("user-a"), true, true, true);
+    await waitFor(() => expect(reopened.result.current.syncState.lastSyncedAt).not.toBeNull());
+    expect(reopened.result.current.guestMergeRequest).toBeNull();
+    expect(await store.getGuestRecords()).toEqual([guest]);
+  });
+
+  it("still asks a different account after the first account declined", async () => {
+    const store = createStore();
+    const guest = await addRecord(store);
+    const { result, rerender } = renderSync(store);
+    await waitFor(() => expect(result.current.guestMergeRequest).not.toBeNull());
+    act(() => result.current.keepGuestRecords());
+    await waitFor(() => expect(result.current.syncState.lastSyncedAt).not.toBeNull());
+    rerender({ user: createUser("user-b"), isAuthReady: true });
+    await waitFor(() => expect(result.current.guestMergeRequest?.userId).toBe("user-b"));
+    expect(await store.getGuestRecords()).toEqual([guest]);
+  });
+
+  it("does not prompt on reopening after a merge, even when later guest records remain", async () => {
+    const store = createStore();
+    const guest = await addRecord(store);
+    const first = renderSync(store);
+    await waitFor(() => expect(first.result.current.guestMergeRequest).not.toBeNull());
+    store.setGuestScope();
+    const laterGuest = await addRecord(store, "不在已确认范围内的记录");
+    store.setUserScope("user-a");
+    await act(async () => { await first.result.current.mergeGuestRecords(); });
+    first.unmount();
+    const reopened = renderSync(store, createUser("user-a"), true, true, true);
+    await waitFor(() => expect(reopened.result.current.syncState.lastSyncedAt).not.toBeNull());
+    expect(reopened.result.current.guestMergeRequest).toBeNull();
+    expect(await store.getGuestRecords()).toEqual([laterGuest]);
+    expect((await store.getAllForSync("user-a")).map((record) => record.id)).toEqual([guest.id]);
   });
 
   it("merges only the confirmed snapshot and then syncs the selected account", async () => {
@@ -334,7 +416,7 @@ describe("useRecordSync: guest merge consent", () => {
     const subscribe = vi.spyOn(LocalRecordRepository.prototype, "subscribe");
     const { result, unmount } = renderSync(store);
     await waitFor(() => expect(result.current.syncState.lastSyncedAt).not.toBeNull());
-    const onLocalChange = subscribe.mock.calls[0][0];
+    const onLocalChange = subscribe.mock.calls.at(-1)![0];
     expect(syncMock).toHaveBeenCalledTimes(1);
 
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });

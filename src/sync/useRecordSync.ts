@@ -50,6 +50,7 @@ export function useRecordSync({
   const [syncState, setSyncState] = useState<SyncState>(signedOutState);
   const [guestMergeRequest, setGuestMergeRequest] = useState<GuestMergeRequest | null>(null);
   const userId = user?.id ?? null;
+  const observedAuthScopeRef = useRef<{ userId: string | null; isLoginPending: boolean } | null>(null);
   const activeUserIdRef = useRef<string | null>(null);
   const scopeVersionRef = useRef(0);
   const readyScopeVersionRef = useRef<number | null>(null);
@@ -114,6 +115,15 @@ export function useRecordSync({
 
   useEffect(() => {
     if (!isAuthReady) return;
+    // The first ready identity restores an existing session, not a new login.
+    // Only a later transition into an account can start a guest-merge prompt.
+    const previousAuthScope = observedAuthScopeRef.current;
+    if (!previousAuthScope || previousAuthScope.userId !== userId) {
+      observedAuthScopeRef.current = {
+        userId,
+        isLoginPending: previousAuthScope !== null && userId !== null,
+      };
+    }
     const scopeVersion = ++scopeVersionRef.current;
     activeUserIdRef.current = userId;
     readyScopeVersionRef.current = null;
@@ -141,17 +151,20 @@ export function useRecordSync({
       const pendingChanges = await localStore.getPendingUploadCount(userId);
       if (!isCurrentScope()) return;
       setSyncState((current) => ({ ...current, pendingChanges }));
-      const guestRecords = await localStore.getGuestRecords();
-      if (!isCurrentScope()) return;
-      if (guestRecords.length) {
-        setGuestMergeRequest({
-          userId,
-          scopeVersion,
-          recordIds: guestRecords.map((record) => record.id),
-          isMerging: false,
-          errorMessage: "",
-        });
-        return;
+      if (observedAuthScopeRef.current?.isLoginPending) {
+        const guestRecords = await localStore.getGuestRecords();
+        if (!isCurrentScope()) return;
+        if (guestRecords.length) {
+          setGuestMergeRequest({
+            userId,
+            scopeVersion,
+            recordIds: guestRecords.map((record) => record.id),
+            isMerging: false,
+            errorMessage: "",
+          });
+          return;
+        }
+        observedAuthScopeRef.current.isLoginPending = false;
       }
       readyScopeVersionRef.current = scopeVersion;
       await syncNow();
@@ -178,6 +191,7 @@ export function useRecordSync({
     if (!guestMergeRequest || guestMergeRequest.userId !== activeUserIdRef.current || guestMergeRequest.scopeVersion !== scopeVersionRef.current) return;
     const scopeVersion = scopeVersionRef.current;
     if (mergingScopeVersionRef.current === scopeVersion) return;
+    if (observedAuthScopeRef.current) observedAuthScopeRef.current.isLoginPending = false;
     setGuestMergeRequest(null);
     readyScopeVersionRef.current = scopeVersion;
     void syncNow();
@@ -204,6 +218,7 @@ export function useRecordSync({
       if (mergingScopeVersionRef.current === scopeVersion) mergingScopeVersionRef.current = null;
     }
     if (scopeVersionRef.current !== scopeVersion) return;
+    if (observedAuthScopeRef.current) observedAuthScopeRef.current.isLoginPending = false;
     setGuestMergeRequest(null);
     readyScopeVersionRef.current = scopeVersion;
     try {

@@ -65,6 +65,33 @@ function restoreAccount(userId = "user-a") {
 }
 
 describe("App: local records before background sync", () => {
+  it("asks only after a login transition and never on refreshing an existing session", async () => {
+    const accountRecord = await seedAccount();
+    const guest = await fixture.store!.create({ content: "刷新后仍保留的登录前记录", happenedAt: new Date().toISOString() });
+    fixture.auth.isAuthReady = true;
+    const first = render(<App />);
+    await screen.findByText(guest.content);
+    restoreAccount();
+    first.rerender(<App />);
+    const dialog = await screen.findByRole("alertdialog", { name: "合并登录前的记录？" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "暂不合并" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    first.unmount();
+
+    const reopened = render(<StrictMode><App /></StrictMode>);
+    await screen.findByText(accountRecord.content);
+    await waitFor(() => expect(syncMock).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("alertdialog", { name: "合并登录前的记录？" })).toBeNull();
+    expect(await fixture.store!.getGuestRecords()).toEqual([guest]);
+
+    fixture.auth.user = null;
+    reopened.rerender(<StrictMode><App /></StrictMode>);
+    await screen.findByText(guest.content);
+    restoreAccount();
+    reopened.rerender(<StrictMode><App /></StrictMode>);
+    await screen.findByRole("alertdialog", { name: "合并登录前的记录？" });
+  });
+
   it("exports only the signed-in account through the collapsed data-management entry", async () => {
     const accountRecord = await seedAccount("user-a", "当前账号的备份记录");
     await seedAccount("user-b", "不能混入导出的其他账号记录");

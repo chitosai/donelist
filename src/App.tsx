@@ -3,6 +3,7 @@ import { AutoGrowTextarea } from "./components/AutoGrowTextarea";
 import { CalendarIcon } from "./components/CalendarIcon";
 import { SyncPanel } from "./components/SyncPanel";
 import { GuestRecordsMergeDialog } from "./components/GuestRecordsMergeDialog";
+import { ResultModal, type ResultModalContent } from "./components/ResultModal";
 import { IndexedDbRecordRepository } from "./data/IndexedDbRecordRepository";
 import { LocalRecordRepository } from "./data/LocalRecordRepository";
 import type { DoneRecord, RecordBackup } from "./domain/DoneRecord";
@@ -56,6 +57,7 @@ export function App() {
   const [editContent, setEditContent] = useState("");
   const [editTime, setEditTime] = useState("");
   const [notice, setNotice] = useState("");
+  const [importResult, setImportResult] = useState<ResultModalContent | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [recordsRevision, setRecordsRevision] = useState(0);
@@ -209,20 +211,40 @@ export function App() {
   }
 
   async function importBackup(file: File) {
+    setNotice("");
     try {
-      const backup = JSON.parse(await file.text()) as RecordBackup;
+      let source: string;
+      try {
+        source = await file.text();
+      } catch (error) {
+        setImportResult({ message: "无法读取文件", detail: error instanceof Error ? error.message : "请重新选择文件后再试。" });
+        return;
+      }
+      let backup: RecordBackup;
+      try {
+        backup = JSON.parse(source) as RecordBackup;
+      } catch (error) {
+        setImportResult({ message: "数据格式不合法", detail: error instanceof Error ? error.message : String(error) });
+        return;
+      }
       const count = await repository.importBackup(backup);
       await refreshRecords();
-      setNotice(`已导入 ${count} 条记录`);
+      const skippedCount = backup.records.length - count;
+      setImportResult({
+        message: count ? `已导入 ${count} 条记录` : skippedCount ? "未导入任何记录" : "备份中没有可导入的记录",
+        detail: skippedCount
+          ? count ? `另有 ${skippedCount} 条记录格式不完整，已跳过。` : `文件中有 ${skippedCount} 条记录格式不完整，均已跳过。`
+          : undefined,
+      });
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "导入失败，请检查备份文件。");
+      setImportResult({ message: error instanceof Error ? error.message : "导入失败，请检查备份文件。" });
     } finally {
       if (importRef.current) importRef.current.value = "";
     }
   }
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" inert={importResult ? true : undefined} aria-hidden={importResult ? true : undefined}>
       <header className="app-header">
         <div>
           <p className="eyebrow">YOUR MONTH, REMEMBERED</p>
@@ -421,6 +443,7 @@ export function App() {
           onKeepGuest={keepGuestRecords}
         />
       )}
+      {importResult && <ResultModal {...importResult} onConfirm={() => setImportResult(null)} />}
     </main>
   );
 }

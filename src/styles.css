@@ -582,6 +582,20 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
 .button-danger { border: 1px solid #a43f32; background: #a43f32; color: white; }
 .button-danger:disabled, .button-secondary:disabled { opacity: .5; cursor: default; }
 .delete-confirm p { margin: -5px 0 24px; color: var(--muted); font-size: 14px; line-height: 1.7; }
+.result-modal-backdrop { z-index: 120; }
+.result-modal-card { max-height: calc(100dvh - 40px); overflow-y: auto; }
+.result-modal-card h2 { line-height: 1.5; overflow-wrap: anywhere; }
+.result-modal-detail {
+  max-height: 35vh;
+  margin: -5px 0 24px;
+  overflow-y: auto;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.result-modal-card .button-primary { min-width: 76px; }
 .review-modal-backdrop { z-index: 80; }
 .review-toast { z-index: 90; }
 

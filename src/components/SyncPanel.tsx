@@ -27,9 +27,9 @@ function DataTransferIcon({ direction }: { direction: "export" | "import" }) {
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="M4 15v5h16v-5" />
       {direction === "export" ? (
-        <path d="M12 3v12m-4-4 4 4 4-4" />
-      ) : (
         <path d="M12 15V3m-4 4 4-4 4 4" />
+      ) : (
+        <path d="M12 3v12m-4-4 4 4 4-4" />
       )}
     </svg>
   );

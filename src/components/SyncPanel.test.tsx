@@ -386,6 +386,8 @@ describe("SyncPanel: login, signout and sync state", () => {
       expect(button.textContent).toBe("");
       expect(button.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     }
+    expect(exportButton.querySelectorAll("path")[1].getAttribute("d")).toBe("M12 15V3m-4 4 4-4 4 4");
+    expect(importButton.querySelectorAll("path")[1].getAttribute("d")).toBe("M12 3v12m-4-4 4 4 4-4");
     await user.click(exportButton);
     await user.click(importButton);
     expect(callbacks.onExport).toHaveBeenCalledTimes(1);

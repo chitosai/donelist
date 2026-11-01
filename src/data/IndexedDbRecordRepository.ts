@@ -254,8 +254,8 @@ export class IndexedDbRecordRepository implements RecordRepository {
   }
 
   async importBackup(backup: RecordBackup): Promise<number> {
-    if (backup.format !== "done-list-backup" || backup.version !== 1 || !Array.isArray(backup.records)) {
-      throw new Error("这不是有效的 Done List v1 备份文件。");
+    if (!backup || typeof backup !== "object" || backup.format !== "done-list-backup" || backup.version !== 1 || !Array.isArray(backup.records)) {
+      throw new Error("这个文件似乎并不是 Donelist 数据备份");
     }
 
     const records = backup.records.filter(

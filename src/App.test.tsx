@@ -5,7 +5,7 @@ import "fake-indexeddb/auto";
 import { deserialize, serialize } from "node:v8";
 import { StrictMode } from "react";
 import type { User } from "@supabase/supabase-js";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IndexedDbRecordRepository } from "./data/IndexedDbRecordRepository";
 import type { DoneRecord } from "./domain/DoneRecord";
@@ -108,6 +108,8 @@ describe("App: local records before background sync", () => {
     Object.defineProperty(file, "text", { value: async () => JSON.stringify(backup) });
     fireEvent.change(fileInput, { target: { files: [file] } });
     await screen.findByText("已导入 1 条记录");
+    expect(screen.getByRole("alertdialog", { name: "已导入 1 条记录" })).toBeTruthy();
+    expect(container.querySelector(".toast")).toBeNull();
     expect(screen.getByText(importedRecord.content)).toBeTruthy();
     expect((await fixture.store!.getAllForSync("user-a")).map((record) => record.id)).toContain(importedRecord.id);
     expect((await fixture.store!.getAllForSync("user-b")).map((record) => record.id)).toEqual([otherRecord.id]);
@@ -264,5 +266,84 @@ describe("App: local records before background sync", () => {
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("读取记录失败"));
     expect(screen.queryByText("这里会出现你刚刚完成的事情。")).toBeNull();
     expect(syncMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("App: import result confirmation", () => {
+  async function renderImportApp() {
+    const original = await fixture.store!.create({ content: "导入前的记录不能丢", happenedAt: new Date().toISOString() });
+    fixture.auth.isAuthReady = true;
+    const { container } = render(<App />);
+    await screen.findByText(original.content);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    return { original, container, input };
+  }
+
+  function selectSource(input: HTMLInputElement, source: string) {
+    const file = new File([source], "selected-file.json", { type: "application/json" });
+    Object.defineProperty(file, "text", { value: async () => source });
+    fireEvent.change(input, { target: { files: [file] } });
+  }
+
+  it("shows the exact JSON parsing error below a clear title and keeps the result until confirmed", async () => {
+    const { original, container, input } = await renderImportApp();
+    const source = '{"records":';
+    let parsingMessage = "";
+    try { JSON.parse(source); } catch (error) { parsingMessage = (error as Error).message; }
+    selectSource(input, source);
+    const modal = await screen.findByRole("alertdialog", { name: "数据格式不合法" });
+    expect(within(modal).getByText(parsingMessage).className).toBe("result-modal-detail");
+    expect(container.querySelector("main")?.hasAttribute("inert")).toBe(true);
+    expect(container.querySelector(".toast")).toBeNull();
+    expect((await fixture.store!.getRecent(10))).toEqual([original]);
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.click(modal.parentElement!);
+    expect(screen.getByRole("alertdialog")).toBe(modal);
+    fireEvent.click(within(modal).getByRole("button", { name: "确认" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(container.querySelector("main")?.hasAttribute("inert")).toBe(false);
+    expect(input.value).toBe("");
+    selectSource(input, source);
+    await screen.findByRole("alertdialog", { name: "数据格式不合法" });
+  });
+
+  it.each([{}, [], null, 42, "unrelated", { format: "done-list-backup", version: 2, records: [] }, { format: "done-list-backup", version: 1, records: "wrong" }])(
+    "rejects unrelated JSON %j with the requested copy and no record changes", async (value) => {
+      const { original, input } = await renderImportApp();
+      selectSource(input, JSON.stringify(value));
+      await screen.findByRole("alertdialog", { name: "这个文件似乎并不是 Donelist 数据备份" });
+      expect(await fixture.store!.getRecent(10)).toEqual([original]);
+      expect(await fixture.store!.db.pendingUploads.count()).toBe(0);
+    },
+  );
+
+  it("clearly reports both imported and skipped records without changing the existing filtering policy", async () => {
+    const { original, input } = await renderImportApp();
+    const valid = { ...original, id: crypto.randomUUID(), content: "这条可以导入" };
+    selectSource(input, JSON.stringify({ format: "done-list-backup", version: 1, records: [valid, null, {}] }));
+    const modal = await screen.findByRole("alertdialog", { name: "已导入 1 条记录" });
+    expect(within(modal).getByText("另有 2 条记录格式不完整，已跳过。")).toBeTruthy();
+    expect((await fixture.store!.getRecent(10)).map((record) => record.id).sort()).toEqual([original.id, valid.id].sort());
+  });
+
+  it.each([
+    [[{}, null], "未导入任何记录", "文件中有 2 条记录格式不完整，均已跳过。"],
+    [[], "备份中没有可导入的记录", null],
+  ] as const)("makes a zero-record result explicit for %j", async (records, title, detail) => {
+    const { original, input } = await renderImportApp();
+    selectSource(input, JSON.stringify({ format: "done-list-backup", version: 1, records }));
+    const modal = await screen.findByRole("alertdialog", { name: title });
+    if (detail) expect(within(modal).getByText(detail)).toBeTruthy();
+    expect(await fixture.store!.getRecent(10)).toEqual([original]);
+  });
+
+  it("distinguishes a file-read failure from malformed JSON", async () => {
+    const { original, input } = await renderImportApp();
+    const file = new File([], "unreadable.json");
+    Object.defineProperty(file, "text", { value: async () => { throw new Error("File cannot be read"); } });
+    fireEvent.change(input, { target: { files: [file] } });
+    const modal = await screen.findByRole("alertdialog", { name: "无法读取文件" });
+    expect(within(modal).getByText("File cannot be read").className).toBe("result-modal-detail");
+    expect(await fixture.store!.getRecent(10)).toEqual([original]);
   });
 });

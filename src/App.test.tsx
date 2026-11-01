@@ -135,7 +135,7 @@ describe("App: local records before background sync", () => {
     const { rerender } = render(<App />);
     expect(getRecent).not.toHaveBeenCalled();
     expect(screen.getByText("正在读取本地记录…")).toBeTruthy();
-    expect(screen.queryByText("这里会出现你刚刚完成的事情。")).toBeNull();
+    expect(screen.queryByText("这里会列出你刚刚完成的事情。")).toBeNull();
     expect((screen.getByLabelText("记录内容") as HTMLTextAreaElement).disabled).toBe(true);
 
     restoreAccount();
@@ -144,7 +144,7 @@ describe("App: local records before background sync", () => {
     expect(screen.getByText(localRecord.content)).toBeTruthy();
     expect(screen.getByRole("button", { name: "同步与账户" }).classList.contains("is-syncing")).toBe(true);
     expect((screen.getByLabelText("记录内容") as HTMLTextAreaElement).disabled).toBe(false);
-    expect(screen.queryByText("这里会出现你刚刚完成的事情。")).toBeNull();
+    expect(screen.queryByText("这里会列出你刚刚完成的事情。")).toBeNull();
     await act(async () => cloud.resolve());
   });
 
@@ -197,7 +197,7 @@ describe("App: local records before background sync", () => {
     render(<App />);
     await waitFor(() => expect(screen.getByText(record.content)).toBeTruthy());
     expect(syncMock).not.toHaveBeenCalled();
-    expect(screen.queryByText("这里会出现你刚刚完成的事情。")).toBeNull();
+    expect(screen.queryByText("这里会列出你刚刚完成的事情。")).toBeNull();
   });
 
   it("loads only guest records when signed out", async () => {
@@ -255,7 +255,7 @@ describe("App: local records before background sync", () => {
     expect(screen.getByText(record.content)).toBeTruthy();
     await act(async () => oldRead.resolve([]));
     expect(screen.getByText(record.content)).toBeTruthy();
-    expect(screen.queryByText("这里会出现你刚刚完成的事情。")).toBeNull();
+    expect(screen.queryByText("这里会列出你刚刚完成的事情。")).toBeNull();
     await act(async () => cloud.resolve());
   });
 
@@ -264,7 +264,7 @@ describe("App: local records before background sync", () => {
     restoreAccount();
     render(<App />);
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("读取记录失败"));
-    expect(screen.queryByText("这里会出现你刚刚完成的事情。")).toBeNull();
+    expect(screen.queryByText("这里会列出你刚刚完成的事情。")).toBeNull();
     expect(syncMock).not.toHaveBeenCalled();
   });
 });

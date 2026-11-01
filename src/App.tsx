@@ -247,7 +247,7 @@ export function App() {
     <main className="app-shell" inert={importResult ? true : undefined} aria-hidden={importResult ? true : undefined}>
       <header className="app-header">
         <div>
-          <p className="eyebrow">YOUR MONTH, REMEMBERED</p>
+          <p className="eyebrow">记录你的成就，无论大小</p>
           <h1>Done List</h1>
         </div>
         <div className="header-actions">
@@ -333,7 +333,7 @@ export function App() {
         ) : records.length === 0 ? (
           <div className="empty-state">
             <span aria-hidden="true">✓</span>
-            <p>这里会出现你刚刚完成的事情。</p>
+            <p>这里会列出你刚刚完成的事情。</p>
           </div>
         ) : (
           <ol className="record-list">

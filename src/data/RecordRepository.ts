@@ -1,4 +1,5 @@
 import type { DoneRecord, NewDoneRecord, RecordBackup } from "../domain/DoneRecord";
+import type { BackupImportOptions } from "../domain/recordBackup";
 
 export interface RecordRepository {
   create(input: NewDoneRecord): Promise<DoneRecord>;
@@ -8,5 +9,5 @@ export interface RecordRepository {
   getByRange(start: Date, end: Date): Promise<DoneRecord[]>;
   getByMonth(year: number, month: number): Promise<DoneRecord[]>;
   exportBackup(): Promise<RecordBackup>;
-  importBackup(backup: RecordBackup): Promise<number>;
+  importBackup(backup: RecordBackup, options?: BackupImportOptions): Promise<number>;
 }

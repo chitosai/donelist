@@ -112,7 +112,7 @@ describe("App: local records before background sync", () => {
     fireEvent.click(screen.getByRole("button", { name: "导出数据" }));
     await screen.findByText("备份已导出");
     expect(exportBackup).toHaveBeenCalledTimes(1);
-    expect((await exportBackup.mock.results[0].value).records).toEqual([accountRecord]);
+    expect(await exportBackup.mock.results[0].value).toMatchObject({ version: 2, owner: { userId: "user-a" }, records: [accountRecord] });
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:account-backup-test");
   });
@@ -130,7 +130,7 @@ describe("App: local records before background sync", () => {
     const chooseFile = vi.spyOn(fileInput, "click");
     fireEvent.click(screen.getByRole("button", { name: "导入数据" }));
     expect(chooseFile).toHaveBeenCalledTimes(1);
-    const backup = { format: "done-list-backup", version: 1, exportedAt: new Date().toISOString(), records: [importedRecord] };
+    const backup = { format: "done-list-backup", version: 2, owner: { userId: "user-a" }, exportedAt: new Date().toISOString(), records: [importedRecord] };
     const file = new File([JSON.stringify(backup)], "backup.json", { type: "application/json" });
     Object.defineProperty(file, "text", { value: async () => JSON.stringify(backup) });
     fireEvent.change(fileInput, { target: { files: [file] } });
@@ -347,7 +347,7 @@ describe("App: import result confirmation", () => {
   it("clearly reports both imported and skipped records without changing the existing filtering policy", async () => {
     const { original, input } = await renderImportApp();
     const valid = { ...original, id: crypto.randomUUID(), content: "这条可以导入" };
-    selectSource(input, JSON.stringify({ format: "done-list-backup", version: 1, records: [valid, null, {}] }));
+    selectSource(input, JSON.stringify({ format: "done-list-backup", version: 2, owner: { userId: "guest" }, records: [valid, null, {}] }));
     const modal = await screen.findByRole("alertdialog", { name: "已导入 1 条记录" });
     expect(within(modal).getByText("另有 2 条记录格式不完整，已跳过。")).toBeTruthy();
     expect((await fixture.store!.getRecent(10)).map((record) => record.id).sort()).toEqual([original.id, valid.id].sort());
@@ -358,7 +358,7 @@ describe("App: import result confirmation", () => {
     [[], "备份中没有可导入的记录", null],
   ] as const)("makes a zero-record result explicit for %j", async (records, title, detail) => {
     const { original, input } = await renderImportApp();
-    selectSource(input, JSON.stringify({ format: "done-list-backup", version: 1, records }));
+    selectSource(input, JSON.stringify({ format: "done-list-backup", version: 2, owner: { userId: "guest" }, records }));
     const modal = await screen.findByRole("alertdialog", { name: title });
     if (detail) expect(within(modal).getByText(detail)).toBeTruthy();
     expect(await fixture.store!.getRecent(10)).toEqual([original]);
@@ -371,6 +371,148 @@ describe("App: import result confirmation", () => {
     fireEvent.change(input, { target: { files: [file] } });
     const modal = await screen.findByRole("alertdialog", { name: "无法读取文件" });
     expect(within(modal).getByText("File cannot be read").className).toBe("result-modal-detail");
+    expect(await fixture.store!.getRecent(10)).toEqual([original]);
+  });
+});
+
+describe("App: backup account checks", () => {
+  function backupSource(userId: string | null) {
+    const now = "2026-11-02T00:00:00Z";
+    const record = { id: crypto.randomUUID(), content: "从备份恢复的新记录", happenedAt: now, createdAt: now, updatedAt: now, isHighlighted: false };
+    return {
+      record,
+      source: JSON.stringify({
+        format: "done-list-backup", version: userId === null ? 1 : 2,
+        exportedAt: now, ...(userId === null ? {} : { owner: { userId } }), records: [record],
+      }),
+    };
+  }
+
+  function chooseFile(input: HTMLInputElement, source: string | Promise<string>) {
+    const file = new File([], "owner-backup.json", { type: "application/json" });
+    Object.defineProperty(file, "text", { value: async () => source });
+    fireEvent.change(input, { target: { files: [file] } });
+  }
+
+  async function renderTarget(userId = "user-a") {
+    const original = userId === "guest"
+      ? await fixture.store!.create({ content: "原来的游客记录", happenedAt: new Date().toISOString() })
+      : await seedAccount(userId);
+    if (userId === "guest") fixture.auth = { user: null, isAuthReady: true };
+    else restoreAccount(userId);
+    const view = render(<App />);
+    await screen.findByText(original.content);
+    return { ...view, original, input: view.container.querySelector('input[type="file"]') as HTMLInputElement };
+  }
+
+  it("blocks another account's v2 backup before any records or pending uploads change", async () => {
+    const { input, original } = await renderTarget();
+    const pending = await fixture.store!.getPendingUploads("user-a");
+    chooseFile(input, backupSource("user-b").source);
+    const modal = await screen.findByRole("alertdialog", { name: "这个备份不属于当前账号" });
+    expect(within(modal).queryByRole("button", { name: "继续导入" })).toBeNull();
+    expect(await fixture.store!.getRecent(10)).toEqual([original]);
+    expect(await fixture.store!.getPendingUploads("user-a")).toEqual(pending);
+    expect(await fixture.store!.getAllForSync("user-b")).toEqual([]);
+    fireEvent.click(within(modal).getByRole("button", { name: "确认" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("lets a user cancel a guest backup, then reselect it and explicitly import into the current account", async () => {
+    const { input, original, container } = await renderTarget();
+    const backup = backupSource("guest");
+    chooseFile(input, backup.source);
+    const modal = await screen.findByRole("alertdialog", { name: "把登录前的备份导入当前账号？" });
+    expect(container.querySelector("main")?.hasAttribute("inert")).toBe(true);
+    expect(await fixture.store!.getRecent(10)).toEqual([original]);
+    expect(document.activeElement).toBe(within(modal).getByRole("button", { name: "取消" }));
+    fireEvent.click(within(modal).getByRole("button", { name: "取消" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(await fixture.store!.getRecent(10)).toEqual([original]);
+    expect(input.value).toBe("");
+    chooseFile(input, backup.source);
+    const retry = await screen.findByRole("alertdialog", { name: "把登录前的备份导入当前账号？" });
+    fireEvent.click(within(retry).getByRole("button", { name: "继续导入" }));
+    await screen.findByRole("alertdialog", { name: "已导入 1 条记录" });
+    expect((await fixture.store!.getAllForSync("user-a")).map((record) => record.id)).toContain(backup.record.id);
+    expect((await fixture.store!.getPendingUploads("user-a")).map((record) => record.recordId)).toContain(backup.record.id);
+    expect(await fixture.store!.getGuestRecords()).toEqual([]);
+  });
+
+  it("asks before restoring account records to guests, without writing to the backup's account", async () => {
+    const { input, original } = await renderTarget("guest");
+    const backup = backupSource("user-b");
+    chooseFile(input, backup.source);
+    const modal = await screen.findByRole("alertdialog", { name: "将账号备份导入本地？" });
+    expect(await fixture.store!.getRecent(10)).toEqual([original]);
+    fireEvent.click(within(modal).getByRole("button", { name: "继续导入" }));
+    await screen.findByRole("alertdialog", { name: "已导入 1 条记录" });
+    expect((await fixture.store!.getGuestRecords()).map((record) => record.id)).toContain(backup.record.id);
+    expect(await fixture.store!.getAllForSync("user-b")).toEqual([]);
+    expect(await fixture.store!.db.pendingUploads.count()).toBe(0);
+  });
+
+  it.each(["guest", "user-a"])("blocks an ownerless legacy backup as an account mismatch for %s", async (userId) => {
+    const { input, original } = await renderTarget(userId);
+    const pending = await fixture.store!.db.pendingUploads.toArray();
+    chooseFile(input, backupSource(null).source);
+    const modal = await screen.findByRole("alertdialog", { name: "这个备份不属于当前账号" });
+    expect(await fixture.store!.getRecent(10)).toEqual([original]);
+    expect(within(modal).queryByRole("button", { name: "继续导入" })).toBeNull();
+    expect(screen.queryByText(/旧版|v1|v2/)).toBeNull();
+    fireEvent.click(within(modal).getByRole("button", { name: "确认" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(await fixture.store!.getRecent(10)).toEqual([original]);
+    expect(await fixture.store!.db.pendingUploads.toArray()).toEqual(pending);
+  });
+
+  it("ignores an old file read after switching accounts, even if it would otherwise be allowed", async () => {
+    const other = await seedAccount("user-b", "账号 B 的原有记录");
+    const { input, rerender, original } = await renderTarget();
+    const read = deferred<string>();
+    chooseFile(input, read.promise);
+    restoreAccount("user-b");
+    rerender(<App />);
+    await screen.findByText(other.content);
+    await act(async () => read.resolve(backupSource("guest").source));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect((await fixture.store!.getAllForSync("user-a")).map((record) => record.id)).toEqual([original.id]);
+    expect(await fixture.store!.getRecent(10)).toEqual([other]);
+  });
+
+  it("invalidates an open confirmation when the active account changes", async () => {
+    const other = await seedAccount("user-b", "切换后的账号记录");
+    const { input, rerender, original } = await renderTarget();
+    chooseFile(input, backupSource("guest").source);
+    const modal = await screen.findByRole("alertdialog", { name: "把登录前的备份导入当前账号？" });
+    const oldConfirm = within(modal).getByRole("button", { name: "继续导入" });
+    restoreAccount("user-b");
+    rerender(<App />);
+    await screen.findByText(other.content);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    fireEvent.click(oldConfirm);
+    expect((await fixture.store!.getAllForSync("user-a")).map((record) => record.id)).toEqual([original.id]);
+    expect(await fixture.store!.getRecent(10)).toEqual([other]);
+  });
+
+  it("does not let a slower previous file replace the newest selection or its result", async () => {
+    const { input } = await renderTarget();
+    const older = deferred<string>();
+    chooseFile(input, older.promise);
+    const latest = backupSource("user-a");
+    chooseFile(input, latest.source);
+    await screen.findByRole("alertdialog", { name: "已导入 1 条记录" });
+    await act(async () => older.resolve(backupSource("user-b").source));
+    expect(screen.getByRole("alertdialog", { name: "已导入 1 条记录" })).toBeTruthy();
+    expect(await fixture.store!.getRecent(10)).toHaveLength(2);
+  });
+
+  it("does not write a pending file after the page unmounts", async () => {
+    const { input, unmount, original } = await renderTarget();
+    const read = deferred<string>();
+    chooseFile(input, read.promise);
+    unmount();
+    await act(async () => read.resolve(backupSource("user-a").source));
     expect(await fixture.store!.getRecent(10)).toEqual([original]);
   });
 });

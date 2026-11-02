@@ -60,4 +60,24 @@ describe("ResultModal", () => {
     expect(modal.getAttribute("aria-describedby")).toBe(detailElement.id);
     expect(modal.querySelector("img")).toBeNull();
   });
+
+  it("supports an explicit cancel choice, defaults focus to it, and cycles focus between both actions", () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    render(<ResultModal message="将账号备份导入本地？" confirmLabel="继续导入" onConfirm={onConfirm} onCancel={onCancel} />);
+    const cancel = screen.getByRole("button", { name: "取消" });
+    const confirm = screen.getByRole("button", { name: "继续导入" });
+    expect(document.activeElement).toBe(cancel);
+    fireEvent.keyDown(window, { key: "Tab" });
+    expect(document.activeElement).toBe(confirm);
+    fireEvent.keyDown(window, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(cancel);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+    fireEvent.click(cancel);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    fireEvent.click(confirm);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
 });

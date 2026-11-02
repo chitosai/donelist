@@ -7,6 +7,7 @@ import { ResultModal, type ResultModalContent } from "./components/ResultModal";
 import { IndexedDbRecordRepository } from "./data/IndexedDbRecordRepository";
 import { LocalRecordRepository } from "./data/LocalRecordRepository";
 import type { DoneRecord, RecordBackup } from "./domain/DoneRecord";
+import { checkBackupImport, GUEST_BACKUP_USER_ID, parseRecordBackup } from "./domain/recordBackup";
 import { formatRecordTime, fromDateTimeLocalValue, toDateTimeLocalValue } from "./utils/time";
 import { ReviewSheet } from "./components/ReviewSheet";
 import { useAuth } from "./auth/AuthProvider";
@@ -20,6 +21,13 @@ type RecordsSnapshot = {
   scopeKey: string;
   records: DoneRecord[];
   errorMessage: string;
+};
+
+type BackupImportRequest = {
+  backup: RecordBackup;
+  scopeKey: string;
+  targetUserId: string;
+  requestId: number;
 };
 
 function EditIcon() {
@@ -58,11 +66,13 @@ export function App() {
   const [editTime, setEditTime] = useState("");
   const [notice, setNotice] = useState("");
   const [importResult, setImportResult] = useState<ResultModalContent | null>(null);
+  const [pendingBackupImport, setPendingBackupImport] = useState<(BackupImportRequest & ResultModalContent) | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [recordsRevision, setRecordsRevision] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
+  const importRequestIdRef = useRef(0);
   const recordsScopeKey = isAuthReady ? (user ? `user:${user.id}` : "guest") : null;
   const activeRecordsScopeRef = useRef(recordsScopeKey);
   const recordsReadVersionRef = useRef(0);
@@ -73,9 +83,12 @@ export function App() {
   useLayoutEffect(() => {
     activeRecordsScopeRef.current = recordsScopeKey;
     recordsReadVersionRef.current += 1;
+    importRequestIdRef.current += 1;
+    setPendingBackupImport(null);
     return () => {
       activeRecordsScopeRef.current = null;
       recordsReadVersionRef.current += 1;
+      importRequestIdRef.current += 1;
     };
   }, [recordsScopeKey]);
 
@@ -210,26 +223,18 @@ export function App() {
     }
   }
 
-  async function importBackup(file: File) {
-    setNotice("");
+  function isCurrentImport(request: Pick<BackupImportRequest, "requestId" | "scopeKey">) {
+    return request.requestId === importRequestIdRef.current && request.scopeKey === activeRecordsScopeRef.current;
+  }
+
+  async function applyBackup(request: BackupImportRequest, isOwnerConfirmed = false) {
+    if (!isCurrentImport(request)) return;
     try {
-      let source: string;
-      try {
-        source = await file.text();
-      } catch (error) {
-        setImportResult({ message: "无法读取文件", detail: error instanceof Error ? error.message : "请重新选择文件后再试。" });
-        return;
-      }
-      let backup: RecordBackup;
-      try {
-        backup = JSON.parse(source) as RecordBackup;
-      } catch (error) {
-        setImportResult({ message: "数据格式不合法", detail: error instanceof Error ? error.message : String(error) });
-        return;
-      }
-      const count = await repository.importBackup(backup);
+      const count = await repository.importBackup(request.backup, { expectedUserId: request.targetUserId, isOwnerConfirmed });
+      if (!isCurrentImport(request)) return;
       await refreshRecords();
-      const skippedCount = backup.records.length - count;
+      if (!isCurrentImport(request)) return;
+      const skippedCount = request.backup.records.length - count;
       setImportResult({
         message: count ? `已导入 ${count} 条记录` : skippedCount ? "未导入任何记录" : "备份中没有可导入的记录",
         detail: skippedCount
@@ -237,14 +242,47 @@ export function App() {
           : undefined,
       });
     } catch (error) {
-      setImportResult({ message: error instanceof Error ? error.message : "导入失败，请检查备份文件。" });
-    } finally {
-      if (importRef.current) importRef.current.value = "";
+      if (isCurrentImport(request)) setImportResult({ message: error instanceof Error ? error.message : "导入失败，请检查备份文件。" });
+    }
+  }
+
+  async function importBackup(file: File) {
+    const scopeKey = activeRecordsScopeRef.current;
+    if (scopeKey === null) return;
+    const requestId = ++importRequestIdRef.current;
+    const targetUserId = user?.id ?? GUEST_BACKUP_USER_ID;
+    const request = { scopeKey, requestId, targetUserId };
+    setNotice("");
+    setImportResult(null);
+    setPendingBackupImport(null);
+    try {
+      let source: string;
+      try {
+        source = await file.text();
+      } catch (error) {
+        if (isCurrentImport(request)) setImportResult({ message: "无法读取文件", detail: error instanceof Error ? error.message : "请重新选择文件后再试。" });
+        return;
+      }
+      if (!isCurrentImport(request)) return;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(source);
+      } catch (error) {
+        setImportResult({ message: "数据格式不合法", detail: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+      const backup = parseRecordBackup(parsed);
+      const check = checkBackupImport(backup, targetUserId);
+      if (check.status === "blocked") setImportResult(check);
+      else if (check.status === "confirmation") setPendingBackupImport({ ...request, backup, message: check.message, detail: check.detail });
+      else await applyBackup({ ...request, backup });
+    } catch (error) {
+      if (isCurrentImport(request)) setImportResult({ message: error instanceof Error ? error.message : "导入失败，请检查备份文件。" });
     }
   }
 
   return (
-    <main className="app-shell" inert={importResult ? true : undefined} aria-hidden={importResult ? true : undefined}>
+    <main className="app-shell" inert={importResult || pendingBackupImport ? true : undefined} aria-hidden={importResult || pendingBackupImport ? true : undefined}>
       <header className="app-header">
         <div>
           <p className="eyebrow">记录你的成就，无论大小</p>
@@ -362,6 +400,9 @@ export function App() {
         hidden
         onChange={(event) => {
           const file = event.target.files?.[0];
+          // Reset immediately so the same file can be chosen again, even if
+          // an account switch invalidates the pending asynchronous read.
+          event.currentTarget.value = "";
           if (file) void importBackup(file);
         }}
       />
@@ -444,6 +485,18 @@ export function App() {
         />
       )}
       {importResult && <ResultModal {...importResult} onConfirm={() => setImportResult(null)} />}
+      {pendingBackupImport && (
+        <ResultModal
+          message={pendingBackupImport.message}
+          detail={pendingBackupImport.detail}
+          confirmLabel="继续导入"
+          onCancel={() => setPendingBackupImport(null)}
+          onConfirm={() => {
+            setPendingBackupImport(null);
+            void applyBackup(pendingBackupImport, true);
+          }}
+        />
+      )}
     </main>
   );
 }

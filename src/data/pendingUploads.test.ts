@@ -18,7 +18,7 @@ function createStore(name = `done-list-outbox-test-${crypto.randomUUID()}`, sync
   return store;
 }
 function makeBackup(records: DoneRecord[]): RecordBackup {
-  return { format: "done-list-backup", version: 1, exportedAt: new Date().toISOString(), records };
+  return { format: "done-list-backup", version: 2, owner: { userId: "user-a" }, exportedAt: new Date().toISOString(), records };
 }
 async function addRecord(store: IndexedDbRecordRepository, content = "待上传记录") {
   return store.create({ content, happenedAt: new Date().toISOString() });
@@ -127,7 +127,7 @@ describe("persistent pending uploads", () => {
     await store.claimGuestRecords("user-a", [guest.id]);
     store.setUserScope("user-a");
     await store.acknowledgeUploads("user-a", await store.getPendingUploads("user-a"));
-    await store.importBackup(backup);
+    await store.importBackup(backup, { isOwnerConfirmed: true });
     expect(await store.getPendingUploadCount("user-a")).toBe(1);
     expect(Object.keys((await store.exportBackup()).records[0]).sort()).toEqual(Object.keys(guest).sort());
     const other = createStore();

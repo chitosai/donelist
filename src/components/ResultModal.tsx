@@ -8,27 +8,33 @@ export type ResultModalContent = {
 
 type ResultModalProps = ResultModalContent & {
   onConfirm: () => void;
+  confirmLabel?: string;
+  onCancel?: () => void;
 };
 
-export function ResultModal({ message, detail, onConfirm }: ResultModalProps) {
+export function ResultModal({ message, detail, onConfirm, confirmLabel = "确认", onCancel }: ResultModalProps) {
   const titleId = useId();
   const detailId = useId();
   const cardRef = useRef<HTMLElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
 
   useLayoutEffect(() => {
     const previousFocus = document.activeElement;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    confirmRef.current?.focus();
+    const focusDefault = () => (cancelRef.current ?? confirmRef.current)?.focus();
+    focusDefault();
     const keepFocus = (event: FocusEvent) => {
-      if (!cardRef.current?.contains(event.target as Node)) confirmRef.current?.focus();
+      if (!cardRef.current?.contains(event.target as Node)) focusDefault();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" || event.key === "Tab") {
         event.preventDefault();
         event.stopImmediatePropagation();
-        confirmRef.current?.focus();
+        if (event.key === "Tab" && cancelRef.current) {
+          (document.activeElement === cancelRef.current ? confirmRef.current : cancelRef.current)?.focus();
+        } else focusDefault();
       }
     };
     document.addEventListener("focusin", keepFocus);
@@ -54,7 +60,8 @@ export function ResultModal({ message, detail, onConfirm }: ResultModalProps) {
         <h2 id={titleId}>{message}</h2>
         {detail && <p className="result-modal-detail" id={detailId}>{detail}</p>}
         <div className="modal-actions">
-          <button ref={confirmRef} className="button-primary" type="button" onClick={onConfirm}>确认</button>
+          {onCancel && <button ref={cancelRef} className="button-secondary" type="button" onClick={onCancel}>取消</button>}
+          <button ref={confirmRef} className="button-primary" type="button" onClick={onConfirm}>{confirmLabel}</button>
         </div>
       </section>
     </div>,

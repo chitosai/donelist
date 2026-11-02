@@ -1,4 +1,5 @@
 import type { DoneRecord, NewDoneRecord, RecordBackup } from "../domain/DoneRecord";
+import type { BackupImportOptions } from "../domain/recordBackup";
 import type { IndexedDbRecordRepository } from "./IndexedDbRecordRepository";
 import type { RecordRepository } from "./RecordRepository";
 
@@ -50,8 +51,8 @@ export class LocalRecordRepository implements RecordRepository {
     return this.store.exportBackup();
   }
 
-  async importBackup(backup: RecordBackup): Promise<number> {
-    const count = await this.store.importBackup(backup);
+  async importBackup(backup: RecordBackup, options?: BackupImportOptions): Promise<number> {
+    const count = await this.store.importBackup(backup, options);
     this.notifyChanged();
     return count;
   }

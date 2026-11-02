@@ -56,7 +56,7 @@ describe("RecordSyncService: persistent upload queue", () => {
     const { store, service, upsert } = setup([row]);
     store.setUserScope("user-b");
     const otherAccountRecord = { ...fromRow(row), content: "另一个账号的同 ID 副本" };
-    await store.importBackup({ format: "done-list-backup", version: 1, exportedAt: new Date().toISOString(), records: [otherAccountRecord] });
+    await store.importBackup({ format: "done-list-backup", version: 2, owner: { userId: "user-b" }, exportedAt: new Date().toISOString(), records: [otherAccountRecord] });
     const otherUploads = await store.getPendingUploads("user-b");
     store.setUserScope("user-a");
     const newRecord = await store.create({ content: "尚未首次同步时新增", happenedAt: new Date().toISOString() });
@@ -150,7 +150,7 @@ describe("RecordSyncService: persistent upload queue", () => {
   });
   it("acknowledges completed batches without clearing failed or unattempted batches", async () => {
     const { store, service, upsert } = setup();
-    await store.importBackup({ format: "done-list-backup", version: 1, exportedAt: new Date().toISOString(), records: Array.from({ length: 201 }, (_, index) => fromRow(makeRow(index))) });
+    await store.importBackup({ format: "done-list-backup", version: 2, owner: { userId: "user-a" }, exportedAt: new Date().toISOString(), records: Array.from({ length: 201 }, (_, index) => fromRow(makeRow(index))) });
     upsert.mockResolvedValueOnce({ error: null }).mockResolvedValueOnce({ error: new Error("second batch failed") });
     await expect(service.sync("user-a")).rejects.toThrow("second batch failed");
     expect(upsert.mock.calls[0][0]).toHaveLength(100);

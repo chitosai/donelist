@@ -1,5 +1,6 @@
 import Dexie, { type Table } from "dexie";
-import type { DoneRecord, NewDoneRecord, RecordBackup } from "../domain/DoneRecord";
+import type { DoneRecord, NewDoneRecord, OwnedRecordBackup, RecordBackup } from "../domain/DoneRecord";
+import { checkBackupImport, GUEST_BACKUP_USER_ID, IMPORT_ACCOUNT_CHANGED_MESSAGE, parseRecordBackup, type BackupImportOptions } from "../domain/recordBackup";
 import type { RecordRepository } from "./RecordRepository";
 import { parseSyncVersion } from "../sync/syncVersion";
 
@@ -266,19 +267,26 @@ export class IndexedDbRecordRepository implements RecordRepository {
     return this.getByRange(new Date(year, month, 1), new Date(year, month + 1, 1));
   }
 
-  async exportBackup(): Promise<RecordBackup> {
-    const records = await this.db.scopedRecords.where("scopeId").equals(this.scopeId).toArray();
+  async exportBackup(): Promise<OwnedRecordBackup> {
+    const scopeId = this.scopeId;
+    const records = await this.db.scopedRecords.where("scopeId").equals(scopeId).toArray();
     return {
       format: "done-list-backup",
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
+      owner: { userId: scopeId === GUEST_SCOPE_ID ? GUEST_BACKUP_USER_ID : scopeId.slice("user:".length) },
       records: records.filter((record) => !record.deletedAt).map(toDoneRecord),
     };
   }
 
-  async importBackup(backup: RecordBackup): Promise<number> {
-    if (!backup || typeof backup !== "object" || backup.format !== "done-list-backup" || backup.version !== 1 || !Array.isArray(backup.records)) {
-      throw new Error("这个文件似乎并不是 Donelist 数据备份");
+  async importBackup(input: RecordBackup, options: BackupImportOptions = {}): Promise<number> {
+    const scopeId = this.scopeId;
+    const targetUserId = scopeId === GUEST_SCOPE_ID ? GUEST_BACKUP_USER_ID : scopeId.slice("user:".length);
+    if (options.expectedUserId !== undefined && options.expectedUserId !== targetUserId) throw new Error(IMPORT_ACCOUNT_CHANGED_MESSAGE);
+    const backup = parseRecordBackup(input);
+    const check = checkBackupImport(backup, targetUserId);
+    if (check.status === "blocked" || (check.status === "confirmation" && !options.isOwnerConfirmed)) {
+      throw new Error(check.message);
     }
 
     const records = backup.records.filter(
@@ -292,13 +300,13 @@ export class IndexedDbRecordRepository implements RecordRepository {
         typeof record.isHighlighted === "boolean",
     );
 
-    const scopeId = this.scopeId;
     const storedRecords = records.map((record) => ({
-      ...record,
+      ...toDoneRecord(record),
       scopeId,
       deletedAt: null,
     }));
     await this.db.transaction("rw", this.db.scopedRecords, this.db.pendingUploads, async () => {
+      if (this.scopeId !== scopeId) throw new Error(IMPORT_ACCOUNT_CHANGED_MESSAGE);
       await this.db.scopedRecords.bulkPut(storedRecords);
       for (const record of storedRecords) await this.enqueueUpload(record);
     });
@@ -339,7 +347,7 @@ export class IndexedDbRecordRepository implements RecordRepository {
   }
 }
 
-function toDoneRecord(record: StoredDoneRecord): DoneRecord {
+function toDoneRecord(record: DoneRecord): DoneRecord {
   return {
     id: record.id,
     content: record.content,

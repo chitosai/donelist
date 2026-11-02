@@ -25,8 +25,8 @@ function makeRecord(): DoneRecord {
   return { id: crypto.randomUUID(), content: "保留原来的记录", happenedAt: "2026-11-02T00:00:00Z", createdAt: "2026-11-02T00:00:00Z", updatedAt: "2026-11-02T00:00:00Z", isHighlighted: false };
 }
 
-function backup(records: DoneRecord[]): RecordBackup {
-  return { format: "done-list-backup", version: 1, exportedAt: "2026-11-02T00:00:00Z", records };
+function backup(records: DoneRecord[], userId = "guest"): RecordBackup {
+  return { format: "done-list-backup", version: 2, owner: { userId }, exportedAt: "2026-11-02T00:00:00Z", records };
 }
 
 describe("records keyed by scope and ID", () => {
@@ -36,11 +36,11 @@ describe("records keyed by scope and ID", () => {
     await store.importBackup(backup([guest]));
     store.setUserScope("user-b");
     const accountB = { ...guest, content: "账号 B 的副本" };
-    await store.importBackup(backup([accountB]));
+    await store.importBackup(backup([accountB], "user-b"));
     const uploadsB = await store.getPendingUploads("user-b");
     store.setUserScope("user-a");
     const accountA = { ...guest, content: "账号 A 的副本" };
-    await store.importBackup(backup([accountA]));
+    await store.importBackup(backup([accountA], "user-a"));
     expect((await store.exportBackup()).records).toEqual([accountA]);
     expect(await store.getByMonth(2026, 10)).toEqual([accountA]);
     await store.update({ ...accountA, content: "只修改 A", isHighlighted: true });
@@ -78,7 +78,7 @@ describe("records keyed by scope and ID", () => {
     await store.importBackup(backup([guest]));
     store.setUserScope("user-a");
     const account = { ...guest, content: "账号副本", updatedAt: scenario === "account-newer" ? "2026-11-03T00:00:00Z" : "2026-11-02T00:00:00Z" };
-    await store.importBackup(backup([account]));
+    await store.importBackup(backup([account], "user-a"));
     const pending = await store.getPendingUploads("user-a");
     expect(await store.claimGuestRecords("user-a", [guest.id, guest.id])).toBe(1);
     expect(await store.getGuestRecords()).toEqual([]);
@@ -99,7 +99,7 @@ describe("records keyed by scope and ID", () => {
     await store.importBackup(backup([guest]));
     store.setUserScope("user-a");
     const account = { ...guest, content: "原有账号副本", updatedAt: "2026-11-02T00:00:00Z" };
-    await store.importBackup(backup([account]));
+    await store.importBackup(backup([account], "user-a"));
     const pending = await store.getPendingUploads("user-a");
     if (failure === "queue") vi.spyOn(store.db.pendingUploads, "put").mockRejectedValueOnce(new Error("queue failed"));
     else vi.spyOn(store.db.scopedRecords, "bulkDelete").mockRejectedValueOnce(new Error("guest-removal failed"));

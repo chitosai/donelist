@@ -51,6 +51,28 @@ function fromRow(row: Row): SyncableDoneRecord {
 }
 
 describe("RecordSyncService: persistent upload queue", () => {
+  it("downloads a cloud ID cached by another local account and still uploads the current account's new record", async () => {
+    const row = makeRow(1);
+    const { store, service, upsert } = setup([row]);
+    store.setUserScope("user-b");
+    const otherAccountRecord = { ...fromRow(row), content: "另一个账号的同 ID 副本" };
+    await store.importBackup({ format: "done-list-backup", version: 1, exportedAt: new Date().toISOString(), records: [otherAccountRecord] });
+    const otherUploads = await store.getPendingUploads("user-b");
+    store.setUserScope("user-a");
+    const newRecord = await store.create({ content: "尚未首次同步时新增", happenedAt: new Date().toISOString() });
+
+    await service.sync("user-a");
+
+    expect((await store.getAllForSync("user-a")).map((record) => record.id).sort()).toEqual([row.id, newRecord.id].sort());
+    expect((await store.getAllForSync("user-a")).find((record) => record.id === row.id)?.content).toBe(row.content);
+    expect(await store.getAllForSync("user-b")).toEqual([otherAccountRecord]);
+    expect(await store.getPendingUploads("user-b")).toEqual(otherUploads);
+    expect(await store.getPendingUploadCount("user-a")).toBe(0);
+    expect(await store.getDownloadCursor("user-a")).toBe("2");
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(upsert.mock.calls[0][0].map((record) => record.id)).toEqual([newRecord.id]);
+  });
+
   it("reads and writes the records table", async () => {
     const { store, service, from, read, upsert, rpc } = setup([makeRow(1)]);
     await store.create({ content: "使用新表名同步", happenedAt: "2026-11-01T00:00:00Z" });

@@ -40,7 +40,7 @@ beforeEach(async () => {
   vi.stubGlobal("structuredClone", <T,>(value: T): T => deserialize(serialize(value)));
   fixture.auth = { user: null, isAuthReady: false };
   fixture.store!.setGuestScope();
-  await fixture.store!.db.records.clear();
+  await fixture.store!.db.scopedRecords.clear();
   await fixture.store!.db.pendingUploads.clear();
   await fixture.store!.db.uploadScopes.clear();
   await fixture.store!.db.downloadScopes.clear();

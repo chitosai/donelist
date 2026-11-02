@@ -134,16 +134,18 @@ describe("persistent pending uploads", () => {
     await other.importBackup(backup);
     expect(await other.db.pendingUploads.count()).toBe(0);
   });
-  it("rolls back failed imports and rejects other scopes' record IDs", async () => {
+  it("imports same-ID records into its own scope and rolls back failed imports", async () => {
     const store = createStore();
     const guest = await addRecord(store);
     store.setUserScope("user-a");
-    await expect(store.importBackup(makeBackup([guest]))).rejects.toThrow("未导入任何记录");
+    expect(await store.importBackup(makeBackup([guest]))).toBe(1);
+    const imported = await store.getAllForSync("user-a");
+    const pending = await store.getPendingUploads("user-a");
     vi.spyOn(store.db.pendingUploads, "put").mockRejectedValueOnce(new Error("queue write failed"));
     await expect(store.importBackup(makeBackup([{ ...guest, id: crypto.randomUUID() }]))).rejects.toThrow("queue write failed");
-    expect(await store.getAllForSync("user-a")).toEqual([]);
+    expect(await store.getAllForSync("user-a")).toEqual(imported);
     expect(await store.getGuestRecords()).toEqual([guest]);
-    expect(await store.getPendingUploadCount("user-a")).toBe(0);
+    expect(await store.getPendingUploads("user-a")).toEqual(pending);
   });
   it("upgrades v2 without deleting data and seeds legacy account records once", async () => {
     const name = `done-list-outbox-test-${crypto.randomUUID()}`;
@@ -154,14 +156,14 @@ describe("persistent pending uploads", () => {
     await legacy.table("records").bulkAdd([record, { ...record, id: crypto.randomUUID(), scopeId: "guest" }]);
     legacy.close();
     const store = createStore(name);
-    expect(await store.db.records.count()).toBe(2);
+    expect(await store.db.scopedRecords.count()).toBe(2);
     await store.prepareUploadQueue("user-a");
     const uploads = await store.getPendingUploads("user-a");
     expect(uploads.map((upload) => upload.recordId)).toEqual([record.id]);
     await store.acknowledgeUploads("user-a", uploads);
     await store.prepareUploadQueue("user-a");
     expect(await store.getPendingUploadCount("user-a")).toBe(0);
-    expect(await store.db.records.count()).toBe(2);
+    expect(await store.db.scopedRecords.count()).toBe(2);
   });
   it("recognizes equivalent cloud timestamps and does not queue downloaded rows", async () => {
     const store = createStore();

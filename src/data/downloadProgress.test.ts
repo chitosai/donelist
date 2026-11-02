@@ -53,12 +53,14 @@ describe("persistent download progress", () => {
     expect(await store.getRecent(10)).toEqual([local]);
   });
 
-  it("does not advance the cursor if a page conflicts with another local scope's IDs", async () => {
+  it("commits the page and cursor without changing a same-ID guest copy", async () => {
     const store = createStore();
     const guest = await store.create({ content: "游客自己的记录", happenedAt: "2026-08-01T00:00:00Z" });
-    await expect(store.applyDownloadedPage("user-a", [{ ...guest, deletedAt: null }], "0", "1", [])).rejects.toThrow("其他本地分区");
-    expect(await store.getDownloadCursor("user-a")).toBe("0");
+    const cloud = { ...guest, content: "账号自己的云端记录", deletedAt: null };
+    expect(await store.applyDownloadedPage("user-a", [cloud], "0", "1", [])).toBe(true);
+    expect(await store.getDownloadCursor("user-a")).toBe("1");
     expect(await store.getGuestRecords()).toEqual([guest]);
+    expect(await store.getAllForSync("user-a")).toEqual([cloud]);
   });
 
   it("refuses a stale page after another tab advanced the cursor", async () => {

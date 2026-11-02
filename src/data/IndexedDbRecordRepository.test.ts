@@ -124,13 +124,27 @@ describe("IndexedDbRecordRepository", () => {
     expect(await repository.getAllForSync("user-b")).toEqual([]);
   });
 
-  it("does not let a same-ID cloud record take ownership of a guest record", async () => {
+  it("stores a same-ID cloud record in the account without taking ownership of the guest copy", async () => {
     const repository = createRepository();
     const guest = await repository.create({ content: "不允许自动合并", happenedAt: new Date().toISOString() });
-    await expect(repository.mergeFromSync([{ ...guest, content: "云端版本", deletedAt: null }], "user-a"))
-      .rejects.toThrow("已停止同步以保留本地数据");
+    const cloud = { ...guest, content: "云端版本", deletedAt: null };
+    await repository.mergeFromSync([cloud], "user-a");
     expect(await repository.getGuestRecords()).toEqual([guest]);
-    expect(await repository.getAllForSync("user-a")).toEqual([]);
+    expect(await repository.getAllForSync("user-a")).toEqual([cloud]);
+  });
+
+  it("downloads a same-ID record without changing another account's copy or pending upload", async () => {
+    const repository = createRepository();
+    repository.setUserScope("user-b");
+    const local = await repository.create({ content: "另一个账号的本地正文", happenedAt: new Date().toISOString() });
+    const queued = await repository.getPendingUploads("user-b");
+    repository.setUserScope("user-a");
+    const cloud = { ...local, content: "当前账号的云端正文", deletedAt: null };
+    await repository.mergeFromSync([cloud], "user-a");
+    expect(await repository.getPendingUploads("user-b")).toEqual(queued);
+    expect(await repository.getAllForSync("user-a")).toEqual([cloud]);
+    repository.setUserScope("user-b");
+    expect(await repository.getRecent(10)).toEqual([local]);
   });
 
   it("keeps the newest version while merging cloud records", async () => {

@@ -35,4 +35,4 @@ pnpm dev --host 127.0.0.1 --port 5173 --strictPort
 
 ## Supabase 数据库
 
-在 Supabase Dashboard 打开 SQL Editor，执行 [`supabase/schema.sql`](supabase/schema.sql)。该脚本会创建 `done_records` 表、索引和 Row Level Security 策略，确保登录用户只能访问自己的记录。
+在 Supabase Dashboard 打开 SQL Editor，执行 [`supabase/schema.sql`](supabase/schema.sql)。该脚本会创建 `records` 表、索引和 Row Level Security 策略，确保登录用户只能访问自己的记录。

@@ -1,20 +1,34 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { AutoGrowTextarea } from "./components/AutoGrowTextarea";
+import { CalendarIcon } from "./components/CalendarIcon";
+import { SyncPanel } from "./components/SyncPanel";
+import { GuestRecordsMergeDialog } from "./components/GuestRecordsMergeDialog";
+import { ResultModal, type ResultModalContent } from "./components/ResultModal";
 import { IndexedDbRecordRepository } from "./data/IndexedDbRecordRepository";
+import { LocalRecordRepository } from "./data/LocalRecordRepository";
 import type { DoneRecord, RecordBackup } from "./domain/DoneRecord";
+import { checkBackupImport, GUEST_BACKUP_USER_ID, parseRecordBackup } from "./domain/recordBackup";
 import { formatRecordTime, fromDateTimeLocalValue, toDateTimeLocalValue } from "./utils/time";
 import { ReviewSheet } from "./components/ReviewSheet";
+import { useAuth } from "./auth/AuthProvider";
+import { useRecordSync } from "./sync/useRecordSync";
 
-const repository = new IndexedDbRecordRepository();
+const localStore = new IndexedDbRecordRepository("done-list", import.meta.env.VITE_SUPABASE_URL);
+const repository = new LocalRecordRepository(localStore);
 const RECENT_LIMIT = 10;
 
-function DownloadIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14" />
-    </svg>
-  );
-}
+type RecordsSnapshot = {
+  scopeKey: string;
+  records: DoneRecord[];
+  errorMessage: string;
+};
+
+type BackupImportRequest = {
+  backup: RecordBackup;
+  scopeKey: string;
+  targetUserId: string;
+  requestId: number;
+};
 
 function EditIcon() {
   return (
@@ -41,27 +55,83 @@ function ChevronIcon() {
 }
 
 export function App() {
+  const { user, isAuthReady } = useAuth();
   const [content, setContent] = useState("");
   const [isBackfillOpen, setIsBackfillOpen] = useState(false);
   const [customTime, setCustomTime] = useState(() => toDateTimeLocalValue(new Date()));
-  const [records, setRecords] = useState<DoneRecord[]>([]);
+  const [recordsSnapshot, setRecordsSnapshot] = useState<RecordsSnapshot | null>(null);
   const [editing, setEditing] = useState<DoneRecord | null>(null);
   const [pendingDelete, setPendingDelete] = useState<DoneRecord | null>(null);
   const [editContent, setEditContent] = useState("");
   const [editTime, setEditTime] = useState("");
   const [notice, setNotice] = useState("");
+  const [importResult, setImportResult] = useState<ResultModalContent | null>(null);
+  const [pendingBackupImport, setPendingBackupImport] = useState<(BackupImportRequest & ResultModalContent) | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
+  const [recordsRevision, setRecordsRevision] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
+  const importRequestIdRef = useRef(0);
+  const recordsScopeKey = isAuthReady ? (user ? `user:${user.id}` : "guest") : null;
+  const activeRecordsScopeRef = useRef(recordsScopeKey);
+  const recordsReadVersionRef = useRef(0);
+  const isRecordsReady = recordsScopeKey !== null && recordsSnapshot?.scopeKey === recordsScopeKey;
+  const records = isRecordsReady ? recordsSnapshot.records : [];
+  const recordsError = isRecordsReady ? recordsSnapshot.errorMessage : "";
+
+  useLayoutEffect(() => {
+    activeRecordsScopeRef.current = recordsScopeKey;
+    recordsReadVersionRef.current += 1;
+    importRequestIdRef.current += 1;
+    setPendingBackupImport(null);
+    return () => {
+      activeRecordsScopeRef.current = null;
+      recordsReadVersionRef.current += 1;
+      importRequestIdRef.current += 1;
+    };
+  }, [recordsScopeKey]);
 
   const refreshRecords = useCallback(async () => {
-    setRecords(await repository.getRecent(RECENT_LIMIT));
+    const scopeKey = activeRecordsScopeRef.current;
+    if (scopeKey === null) return;
+    const readVersion = ++recordsReadVersionRef.current;
+    const isCurrentRead = () => readVersion === recordsReadVersionRef.current && scopeKey === activeRecordsScopeRef.current;
+    try {
+      const nextRecords = await repository.getRecent(RECENT_LIMIT);
+      if (!isCurrentRead()) return;
+      setRecordsSnapshot({ scopeKey, records: nextRecords, errorMessage: "" });
+      setRecordsRevision((current) => current + 1);
+    } catch (error) {
+      if (!isCurrentRead()) return;
+      setRecordsSnapshot((current) => ({
+        scopeKey,
+        records: current?.scopeKey === scopeKey ? current.records : [],
+        errorMessage: "读取记录失败，请刷新页面重试。",
+      }));
+      throw error;
+    }
   }, []);
 
+  const { syncState, syncNow, guestMergeRequest, mergeGuestRecords, keepGuestRecords } = useRecordSync({
+    user,
+    isAuthReady,
+    repository,
+    localStore,
+    onRecordsChanged: refreshRecords,
+  });
+
+  // Scope initialization in useRecordSync is the only initial load. Reading here
+  // before auth restoration would query the guest partition instead of the user.
   useEffect(() => {
-    refreshRecords().catch(() => setNotice("读取记录失败，请刷新页面重试。"));
-  }, [refreshRecords]);
+    setEditing(null);
+    setPendingDelete(null);
+    setIsReviewOpen(false);
+  }, [recordsScopeKey]);
+
+  useEffect(() => {
+    if (isRecordsReady && !recordsError) inputRef.current?.focus();
+  }, [isRecordsReady, recordsError]);
 
   useEffect(() => {
     if (!notice) return;
@@ -72,7 +142,7 @@ export function App() {
   async function submitRecord(event?: FormEvent) {
     event?.preventDefault();
     const trimmed = content.trim();
-    if (!trimmed || isSaving) return;
+    if (!trimmed || isSaving || !isRecordsReady || recordsError) return;
 
     setIsSaving(true);
     try {
@@ -153,30 +223,83 @@ export function App() {
     }
   }
 
-  async function importBackup(file: File) {
+  function isCurrentImport(request: Pick<BackupImportRequest, "requestId" | "scopeKey">) {
+    return request.requestId === importRequestIdRef.current && request.scopeKey === activeRecordsScopeRef.current;
+  }
+
+  async function applyBackup(request: BackupImportRequest, isOwnerConfirmed = false) {
+    if (!isCurrentImport(request)) return;
     try {
-      const backup = JSON.parse(await file.text()) as RecordBackup;
-      const count = await repository.importBackup(backup);
+      const count = await repository.importBackup(request.backup, { expectedUserId: request.targetUserId, isOwnerConfirmed });
+      if (!isCurrentImport(request)) return;
       await refreshRecords();
-      setNotice(`已导入 ${count} 条记录`);
+      if (!isCurrentImport(request)) return;
+      const skippedCount = request.backup.records.length - count;
+      setImportResult({
+        message: count ? `已导入 ${count} 条记录` : skippedCount ? "未导入任何记录" : "备份中没有可导入的记录",
+        detail: skippedCount
+          ? count ? `另有 ${skippedCount} 条记录格式不完整，已跳过。` : `文件中有 ${skippedCount} 条记录格式不完整，均已跳过。`
+          : undefined,
+      });
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "导入失败，请检查备份文件。");
-    } finally {
-      if (importRef.current) importRef.current.value = "";
+      if (isCurrentImport(request)) setImportResult({ message: error instanceof Error ? error.message : "导入失败，请检查备份文件。" });
+    }
+  }
+
+  async function importBackup(file: File) {
+    const scopeKey = activeRecordsScopeRef.current;
+    if (scopeKey === null) return;
+    const requestId = ++importRequestIdRef.current;
+    const targetUserId = user?.id ?? GUEST_BACKUP_USER_ID;
+    const request = { scopeKey, requestId, targetUserId };
+    setNotice("");
+    setImportResult(null);
+    setPendingBackupImport(null);
+    try {
+      let source: string;
+      try {
+        source = await file.text();
+      } catch (error) {
+        if (isCurrentImport(request)) setImportResult({ message: "无法读取文件", detail: error instanceof Error ? error.message : "请重新选择文件后再试。" });
+        return;
+      }
+      if (!isCurrentImport(request)) return;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(source);
+      } catch (error) {
+        setImportResult({ message: "数据格式不合法", detail: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+      const backup = parseRecordBackup(parsed);
+      const check = checkBackupImport(backup, targetUserId);
+      if (check.status === "blocked") setImportResult(check);
+      else if (check.status === "confirmation") setPendingBackupImport({ ...request, backup, message: check.message, detail: check.detail });
+      else await applyBackup({ ...request, backup });
+    } catch (error) {
+      if (isCurrentImport(request)) setImportResult({ message: error instanceof Error ? error.message : "导入失败，请检查备份文件。" });
     }
   }
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" inert={importResult || pendingBackupImport ? true : undefined} aria-hidden={importResult || pendingBackupImport ? true : undefined}>
       <header className="app-header">
         <div>
-          <p className="eyebrow">YOUR MONTH, REMEMBERED</p>
+          <p className="eyebrow">记录你的成就，无论大小</p>
           <h1>Done List</h1>
         </div>
-        <button className="review-button" type="button" onClick={() => setIsReviewOpen(true)}>
-          回顾
-          <span aria-hidden="true">↗</span>
-        </button>
+        <div className="header-actions">
+          <button className="review-button" type="button" disabled={!isRecordsReady || !!recordsError} onClick={() => setIsReviewOpen(true)}>
+            <span className="review-button-label">回顾</span>
+            <CalendarIcon />
+          </button>
+          <SyncPanel
+            syncState={syncState}
+            onSync={syncNow}
+            onExport={exportBackup}
+            onImport={() => importRef.current?.click()}
+          />
+        </div>
       </header>
 
       <section className={`composer ${isBackfillOpen ? "is-backfill" : ""}`} aria-label="添加记录">
@@ -225,25 +348,30 @@ export function App() {
             aria-label="记录内容"
             autoComplete="off"
             maxLength={500}
+            disabled={!isRecordsReady || !!recordsError}
             autoFocus
           />
-          <button type="submit" disabled={!content.trim() || isSaving} aria-label="保存记录">
+          <button type="submit" disabled={!content.trim() || isSaving || !isRecordsReady || !!recordsError} aria-label="保存记录">
             {isSaving ? "…" : "↵"}
           </button>
         </form>
         <p className="keyboard-hint">Enter 保存 · Shift + Enter 换行</p>
       </section>
 
-      <section className="recent-section" aria-labelledby="recent-title">
+      <section className="recent-section" aria-labelledby="recent-title" aria-busy={!isRecordsReady}>
         <div className="section-heading">
           <h2 id="recent-title">最近记录</h2>
-          <span>{records.length ? `最近 ${records.length} 条` : "0 条"}</span>
+          <span>{!isRecordsReady ? "读取中…" : recordsError && !records.length ? "读取失败" : records.length ? `最近 ${records.length} 条` : "0 条"}</span>
         </div>
 
-        {records.length === 0 ? (
+        {!isRecordsReady ? (
+          <div className="empty-state" role="status"><p>正在读取本地记录…</p></div>
+        ) : recordsError && records.length === 0 ? (
+          <div className="empty-state" role="alert"><p>{recordsError}</p></div>
+        ) : records.length === 0 ? (
           <div className="empty-state">
             <span aria-hidden="true">✓</span>
-            <p>这里会出现你刚刚完成的事情。</p>
+            <p>这里会列出你刚刚完成的事情。</p>
           </div>
         ) : (
           <ol className="record-list">
@@ -265,29 +393,23 @@ export function App() {
         )}
       </section>
 
-      <details className="data-tools">
-        <summary>数据工具</summary>
-        <div>
-          <button type="button" onClick={() => void exportBackup()}>
-            <DownloadIcon /> 导出备份
-          </button>
-          <button type="button" onClick={() => importRef.current?.click()}>导入备份</button>
-          <input
-            ref={importRef}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void importBackup(file);
-            }}
-          />
-        </div>
-      </details>
+      <input
+        ref={importRef}
+        type="file"
+        accept="application/json,.json"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          // Reset immediately so the same file can be chosen again, even if
+          // an account switch invalidates the pending asynchronous read.
+          event.currentTarget.value = "";
+          if (file) void importBackup(file);
+        }}
+      />
 
       {notice && <div className="toast" role="status">{notice}</div>}
 
-      {editing && (
+      {editing && isRecordsReady && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setEditing(null)}>
           <section
             className="modal-card"
@@ -324,7 +446,7 @@ export function App() {
         </div>
       )}
 
-      {pendingDelete && (
+      {pendingDelete && isRecordsReady && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setPendingDelete(null)}>
           <section
             className="modal-card delete-confirm"
@@ -345,11 +467,36 @@ export function App() {
       )}
 
       <ReviewSheet
-        open={isReviewOpen}
+        key={recordsScopeKey ?? "loading"}
+        open={isReviewOpen && isRecordsReady && !recordsError}
         repository={repository}
+        refreshKey={recordsRevision}
         onClose={() => setIsReviewOpen(false)}
         onRecordsChanged={refreshRecords}
       />
+
+      {guestMergeRequest && (
+        <GuestRecordsMergeDialog
+          key={guestMergeRequest.scopeVersion}
+          request={guestMergeRequest}
+          accountEmail={user?.email}
+          onMerge={mergeGuestRecords}
+          onKeepGuest={keepGuestRecords}
+        />
+      )}
+      {importResult && <ResultModal {...importResult} onConfirm={() => setImportResult(null)} />}
+      {pendingBackupImport && (
+        <ResultModal
+          message={pendingBackupImport.message}
+          detail={pendingBackupImport.detail}
+          confirmLabel="继续导入"
+          onCancel={() => setPendingBackupImport(null)}
+          onConfirm={() => {
+            setPendingBackupImport(null);
+            void applyBackup(pendingBackupImport, true);
+          }}
+        />
+      )}
     </main>
   );
 }

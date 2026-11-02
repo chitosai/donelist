@@ -80,5 +80,92 @@ describe("IndexedDbRecordRepository", () => {
     await repository.delete(record.id);
 
     expect(await repository.getRecent(10)).toEqual([]);
+    expect((await repository.getAllForSync())[0].deletedAt).not.toBeNull();
+  });
+
+  it("claims guest records for a signed-in user and keeps scopes separate", async () => {
+    const repository = createRepository();
+    const guest = await repository.create({ content: "登录前记录", happenedAt: new Date().toISOString() });
+
+    expect(await repository.claimGuestRecords("user-a", [guest.id])).toBe(1);
+    repository.setUserScope("user-a");
+    expect((await repository.getRecent(10)).map((record) => record.content)).toEqual(["登录前记录"]);
+
+    repository.setGuestScope();
+    expect(await repository.getRecent(10)).toEqual([]);
+  });
+
+  it("only claims the visible guest records included in the confirmation snapshot", async () => {
+    const repository = createRepository();
+    const confirmed = await repository.create({ content: "已确认", happenedAt: new Date().toISOString() });
+    const deleted = await repository.create({ content: "已删除", happenedAt: new Date().toISOString() });
+    await repository.delete(deleted.id);
+    expect((await repository.getGuestRecords()).map((record) => record.id)).toEqual([confirmed.id]);
+    const later = await repository.create({ content: "确认框出现后新增", happenedAt: new Date().toISOString() });
+    repository.setUserScope("user-b");
+    const otherAccount = await repository.create({ content: "其他账号", happenedAt: new Date().toISOString() });
+    repository.setUserScope("user-a");
+
+    expect(await repository.claimGuestRecords("user-a", [confirmed.id, confirmed.id, deleted.id, otherAccount.id, "missing"])).toBe(1);
+    expect((await repository.getRecent(10)).map((record) => record.id)).toEqual([confirmed.id]);
+    expect((await repository.getGuestRecords()).map((record) => record.id)).toEqual([later.id]);
+    repository.setUserScope("user-b");
+    expect((await repository.getRecent(10)).map((record) => record.id)).toEqual([otherAccount.id]);
+  });
+
+  it("binds in-flight sync reads and merges to their account rather than the active UI scope", async () => {
+    const repository = createRepository();
+    const guest = await repository.create({ content: "留在游客区", happenedAt: new Date().toISOString() });
+    const cloud = { ...guest, id: crypto.randomUUID(), content: "账号 A 云端记录", deletedAt: null };
+    await repository.mergeFromSync([cloud], "user-a");
+
+    expect((await repository.getRecent(10)).map((record) => record.id)).toEqual([guest.id]);
+    expect((await repository.getAllForSync("user-a")).map((record) => record.id)).toEqual([cloud.id]);
+    expect(await repository.getAllForSync("user-b")).toEqual([]);
+  });
+
+  it("stores a same-ID cloud record in the account without taking ownership of the guest copy", async () => {
+    const repository = createRepository();
+    const guest = await repository.create({ content: "不允许自动合并", happenedAt: new Date().toISOString() });
+    const cloud = { ...guest, content: "云端版本", deletedAt: null };
+    await repository.mergeFromSync([cloud], "user-a");
+    expect(await repository.getGuestRecords()).toEqual([guest]);
+    expect(await repository.getAllForSync("user-a")).toEqual([cloud]);
+  });
+
+  it("downloads a same-ID record without changing another account's copy or pending upload", async () => {
+    const repository = createRepository();
+    repository.setUserScope("user-b");
+    const local = await repository.create({ content: "另一个账号的本地正文", happenedAt: new Date().toISOString() });
+    const queued = await repository.getPendingUploads("user-b");
+    repository.setUserScope("user-a");
+    const cloud = { ...local, content: "当前账号的云端正文", deletedAt: null };
+    await repository.mergeFromSync([cloud], "user-a");
+    expect(await repository.getPendingUploads("user-b")).toEqual(queued);
+    expect(await repository.getAllForSync("user-a")).toEqual([cloud]);
+    repository.setUserScope("user-b");
+    expect(await repository.getRecent(10)).toEqual([local]);
+  });
+
+  it("keeps the newest version while merging cloud records", async () => {
+    const repository = createRepository();
+    repository.setUserScope("user-a");
+    const local = await repository.create({ content: "本地新版", happenedAt: new Date().toISOString() });
+
+    await repository.mergeFromSync([{
+      ...local,
+      content: "云端旧版",
+      updatedAt: new Date(Date.now() - 60_000).toISOString(),
+      deletedAt: null,
+    }]);
+    expect((await repository.getRecent(10))[0].content).toBe("本地新版");
+
+    await repository.mergeFromSync([{
+      ...local,
+      content: "云端新版",
+      updatedAt: new Date(Date.now() + 60_000).toISOString(),
+      deletedAt: null,
+    }]);
+    expect((await repository.getRecent(10))[0].content).toBe("云端新版");
   });
 });

@@ -18,6 +18,7 @@ import { deleteRecordFromCollection, updateRecordCollection } from "./reviewReco
 type ReviewSheetProps = {
   open: boolean;
   repository: RecordRepository;
+  refreshKey?: number;
   onClose: () => void;
   onRecordsChanged?: () => void | Promise<void>;
 };
@@ -328,7 +329,7 @@ function DayDetailPopover({
   );
 }
 
-export function ReviewSheet({ open, repository, onClose, onRecordsChanged }: ReviewSheetProps) {
+export function ReviewSheet({ open, repository, refreshKey, onClose, onRecordsChanged }: ReviewSheetProps) {
   const [rendered, setRendered] = useState(open);
   const [closing, setClosing] = useState(false);
   const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(new Date()));
@@ -405,7 +406,7 @@ export function ReviewSheet({ open, repository, onClose, onRecordsChanged }: Rev
     return () => {
       cancelled = true;
     };
-  }, [calendarRange, open, repository, rendered]);
+  }, [calendarRange, open, refreshKey, repository, rendered]);
 
   useEffect(() => {
     if (!open) return;

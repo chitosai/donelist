@@ -214,11 +214,6 @@ export function SyncPanel({ syncState, onSync, onExport, onImport }: SyncPanelPr
                 <button className="sync-main-action" type="button" onClick={() => openAuthView("login")}>登录</button>
                 <button type="button" onClick={() => openAuthView("register")}>注册</button>
               </div>
-              <p className="sync-data-note">您可以随时导出自己的数据</p>
-              <div className="sync-data-actions">
-                <button type="button" onClick={() => void onExport()}>导出数据</button>
-                <button type="button" onClick={onImport}>导入数据</button>
-              </div>
             </>
           ) : (
             <>

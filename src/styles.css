@@ -156,8 +156,7 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sync-description,
-.sync-data-note {
+.sync-description {
   color: #53645b;
   font-size: 13px;
   line-height: 1.7;
@@ -166,10 +165,8 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   margin: 0;
 }
 .sync-description + .sync-primary-actions { margin-top: 17px; }
-.sync-primary-actions,
-.sync-data-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sync-primary-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .sync-primary-actions button,
-.sync-data-actions button,
 .sync-auth-form > button {
   min-height: 40px;
   border: 1px solid var(--line);
@@ -180,8 +177,7 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
   font-weight: 650;
   transition: border-color .15s, background .15s, color .15s;
 }
-.sync-primary-actions button:hover,
-.sync-data-actions button:hover { border-color: #aeb8b1; background: #f2f1ea; }
+.sync-primary-actions button:hover { border-color: #aeb8b1; background: #f2f1ea; }
 .sync-primary-actions .sync-main-action,
 .sync-auth-form > .sync-main-action {
   border-color: var(--green);
@@ -192,12 +188,6 @@ h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); line-height: .95; letter-spac
 .sync-auth-form > .sync-main-action:hover { background: #0e342b; }
 .sync-primary-actions button:disabled,
 .sync-auth-form > button:disabled { cursor: default; opacity: .48; }
-.sync-data-note {
-  margin: 17px 0 9px;
-  border-top: 1px solid var(--line);
-  padding-top: 13px;
-}
-.sync-data-actions button { color: #59675f; }
 .sync-data-management { margin-top: 12px; }
 .sync-data-management summary {
   display: flex;

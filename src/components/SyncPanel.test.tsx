@@ -68,13 +68,24 @@ describe("SyncPanel: entry and local validation", () => {
     expect(screen.getByText("至少 6 个字符")).toBeTruthy();
   });
 
-  it("keeps login, registration, export and import available to guests", async () => {
+  it("keeps guest authentication available without rendering the entire backup section", async () => {
     const { user, callbacks } = await renderPanel();
     expect(screen.getByText("数据仅保存在本地")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "导出数据" }));
-    await user.click(screen.getByRole("button", { name: "导入数据" }));
-    expect(callbacks.onExport).toHaveBeenCalledTimes(1);
-    expect(callbacks.onImport).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "登录" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "注册" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "导出数据", hidden: true })).toBeNull();
+    expect(screen.queryByRole("button", { name: "导入数据", hidden: true })).toBeNull();
+    expect(screen.queryByText("您可以随时导出自己的数据")).toBeNull();
+    expect(document.querySelector(".sync-data-actions, .sync-data-note, .sync-data-management")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "登录" }));
+    expect(screen.getByLabelText("邮箱")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "← 返回" }));
+    await user.click(screen.getByRole("button", { name: "注册" }));
+    expect(screen.getByLabelText("确认密码")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "导出数据", hidden: true })).toBeNull();
+    expect(screen.queryByRole("button", { name: "导入数据", hidden: true })).toBeNull();
+    expect(callbacks.onExport).not.toHaveBeenCalled();
+    expect(callbacks.onImport).not.toHaveBeenCalled();
     expect(authMock.signUp).not.toHaveBeenCalled();
   });
 
@@ -409,7 +420,7 @@ describe("SyncPanel: login, signout and sync state", () => {
     expect((screen.getByText("数据管理").closest("details") as HTMLDetailsElement).open).toBe(false);
   });
 
-  it("resets expanded data management when the account changes and preserves the existing guest actions", async () => {
+  it("resets data management on account changes and removes all backup actions after signing out", async () => {
     const { user } = await renderSignedInPanel();
     await user.click(screen.getByText("数据管理"));
     act(() => emitAuthEvent("SIGNED_IN", createSession(createUser("other-user", "other@example.com"))));
@@ -417,8 +428,11 @@ describe("SyncPanel: login, signout and sync state", () => {
     expect(screen.getByText("other@example.com")).toBeTruthy();
     act(() => emitAuthEvent("SIGNED_OUT", null));
     expect(screen.queryByText("数据管理")).toBeNull();
-    expect(screen.getByRole("button", { name: "导出数据" }).textContent).toBe("导出数据");
-    expect(screen.getByRole("button", { name: "导入数据" }).textContent).toBe("导入数据");
+    expect(screen.queryByRole("button", { name: "导出数据", hidden: true })).toBeNull();
+    expect(screen.queryByRole("button", { name: "导入数据", hidden: true })).toBeNull();
+    expect(screen.queryByText("您可以随时导出自己的数据")).toBeNull();
+    expect(screen.getByRole("button", { name: "登录" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "注册" })).toBeTruthy();
   });
 
   it("suppresses duplicate login requests and restores the button after failure", async () => {
